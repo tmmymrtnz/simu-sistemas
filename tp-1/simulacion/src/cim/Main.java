@@ -4,14 +4,17 @@ import java.io.BufferedWriter;
 import java.io.IOException;
 import java.nio.file.*;
 import java.util.*;
+import java.util.stream.Collectors;
 
 /**
- *  java -jar cim.jar [archivo.properties]
- *  (si se omite, busca "config.properties" en cwd)
+ *  java -jar simulacion/cim.jar [config.properties]
+ *  Salidas por frame: out/<base>/particles_t####.csv, neighbours_t####.txt
+ *  Además, copia "último" como particles.csv y neighbours.txt
+ *  Escribe metrics.csv con tiempos y comparaciones (CIM y brute).
  */
 public class Main {
 
-    private static Properties load(String path) throws IOException {
+    private static Properties loadProps(String path) throws IOException {
         Properties p = new Properties();
         try (var in = Files.newInputStream(Path.of(path))) { p.load(in); }
         return p;
@@ -23,55 +26,160 @@ public class Main {
     }
 
     public static void main(String[] args) throws IOException {
-        String file = (args.length == 0) ? "config.properties" : args[0];
-        Properties P = load(file);
+        String propFile = (args.length == 0) ? "config.properties" : args[0];
+        Properties P = loadProps(propFile);
 
-        int     N  = req(P,"N", Integer::parseInt);
-        double  L  = req(P,"L", Double::parseDouble);
-        int     M  = req(P,"M", Integer::parseInt);
-        double  rc = req(P,"rc",Double::parseDouble);
-        double  r  = req(P,"r", Double::parseDouble);
+        int     N   = req(P,"N", Integer::parseInt);
+        double  L   = req(P,"L", Double::parseDouble);
+        int     M   = req(P,"M", Integer::parseInt);
+        double  rc  = req(P,"rc",Double::parseDouble);
         boolean periodic = Boolean.parseBoolean(P.getProperty("periodic","false"));
         long    seed     = P.containsKey("seed") ? Long.parseLong(P.getProperty("seed")) : -1;
         String  outBase  = P.getProperty("outputBase","run");
 
+        // radios
+        boolean useRange = P.containsKey("rMin") && P.containsKey("rMax");
+        double rFixed = P.containsKey("r") ? Double.parseDouble(P.getProperty("r")) : -1;
+        double rMin = useRange ? Double.parseDouble(P.getProperty("rMin")) : rFixed;
+        double rMax = useRange ? Double.parseDouble(P.getProperty("rMax")) : rFixed;
+        if (rFixed < 0 && !useRange) throw new IllegalArgumentException("Definí r o (rMin,rMax)");
+
+        // dinámica para animación
+        int frames = Integer.parseInt(P.getProperty("frames","1"));
+        double dt  = Double.parseDouble(P.getProperty("dt","0.1"));
+        double vmax= Double.parseDouble(P.getProperty("vmax","0.0")); // 0 => quietas
+        boolean compareBrute = Boolean.parseBoolean(P.getProperty("compareBrute","false"));
+
         Random rnd = (seed >= 0) ? new Random(seed) : new Random();
 
-        /* generar partículas (rechazo simple para no superponer) */
+        // generar partículas (no solapadas, rechazo simple)
         List<Particle> ps = new ArrayList<>(N);
         for (int id = 0; id < N; id++) {
-            double x, y;  int tries = 0;  boolean ok;
+            double r = useRange ? (rMin + rnd.nextDouble()*(rMax - rMin)) : rFixed;
+            double x, y; int tries=0; boolean ok;
             do {
-                x = rnd.nextDouble() * L;  y = rnd.nextDouble() * L;  ok = true;
+                x = rnd.nextDouble()*L; y = rnd.nextDouble()*L; ok=true;
                 for (Particle p : ps) {
                     double dx = x - p.x, dy = y - p.y;
                     if (periodic) {
-                        if (dx > 0.5*L) dx -= L;  if (dx < -0.5*L) dx += L;
-                        if (dy > 0.5*L) dy -= L;  if (dy < -0.5*L) dy += L;
+                        if (dx > 0.5*L) dx -= L; if (dx < -0.5*L) dx += L;
+                        if (dy > 0.5*L) dy -= L; if (dy < -0.5*L) dy += L;
                     }
-                    if (dx*dx + dy*dy < (2*r)*(2*r)) { ok = false; break; }
+                    double minD = (r + p.r);
+                    if (dx*dx + dy*dy < (minD*minD)) { ok=false; break; }
                 }
-            } while (!ok && ++tries < 1_000);
-            ps.add(new Particle(id,x,y,r));
+            } while (!ok && ++tries < 2000);
+            Particle np = new Particle(id,x,y,r);
+            if (vmax > 0) { np.vx = (rnd.nextDouble()*2-1)*vmax; np.vy = (rnd.nextDouble()*2-1)*vmax; }
+            ps.add(np);
         }
 
-        /* CIM */
-        CellIndexMethod cim = new CellIndexMethod(L,rc,M,periodic);
-        long t0 = System.nanoTime();
-        var neigh = cim.neighbours(ps);
-        long dt = System.nanoTime() - t0;
+        // salida
+        Path dir = Path.of("out", outBase);
+        Files.createDirectories(dir);
 
-        /* salida */
-        Path dir = Path.of("out", outBase);  Files.createDirectories(dir);
-        try (BufferedWriter w = Files.newBufferedWriter(dir.resolve("neighbours.txt"))) {
-            for (Particle p : ps) { w.write(p.id + ": " + neigh.get(p.id)); w.newLine(); }
-        }
-        try (BufferedWriter w = Files.newBufferedWriter(dir.resolve("particles.csv"))) {
-            w.write("id,x,y,r\n");
-            for (Particle p : ps)
-                w.write(String.format(Locale.US,"%d,%.6f,%.6f,%.3f%n",p.id,p.x,p.y,p.r));
+        // métrica por frame
+        List<String> metrics = new ArrayList<>();
+        metrics.add("frame,method,ms,comparisons,neighbors_total");
+
+        // simulación (frames)
+        for (int f=0; f<frames; f++) {
+            // vecindad CIM
+            CellIndexMethod cim = new CellIndexMethod(L, rc, M, periodic);
+            long t0 = System.nanoTime();
+            Map<Integer, Set<Integer>> neigh = cim.neighbours(ps);
+            long dtCim = System.nanoTime() - t0;
+
+            long neighborsTotal = neigh.values().stream().mapToLong(Set::size).sum();
+
+            metrics.add(String.format(java.util.Locale.US,
+                "%d,CIM,%.3f,%d,%d", f, dtCim/1e6, cim.comparisons, neighborsTotal));
+
+            // fuerza bruta (opcional)
+            if (compareBrute) {
+                long tb0 = System.nanoTime();
+                var brute = CellIndexMethod.bruteForce(ps, L, rc, periodic);
+                long dtBrute = System.nanoTime() - tb0;
+                long neighborsTotalB = brute.neigh.values().stream().mapToLong(Set::size).sum();
+
+                // chequeo de correctitud: diferencias
+                if (!neigh.equals(brute.neigh)) {
+                    long diffs = diffCount(neigh, brute.neigh);
+                    System.err.println("⚠️  CIM vs Brute difieren en " + diffs + " enlaces.");
+                }
+                metrics.add(String.format(java.util.Locale.US,
+                    "%d,BRUTE,%.3f,%d,%d", f, dtBrute/1e6, brute.comparisons, neighborsTotalB));
+            }
+
+            // escribir snapshot
+            String tag = String.format("t%04d", f);
+            writeParticles(dir.resolve("particles_"+tag+".csv"), ps);
+            writeNeighbours(dir.resolve("neighbours_"+tag+".txt"), neigh);
+
+            // avanzar posiciones para próximo frame
+            if (f < frames-1 && vmax > 0) step(ps, L, dt, periodic);
         }
 
-        System.out.printf(Locale.US,"CIM %.3f ms — resultados en %s%n", dt/1e6, dir);
+        // copiar “último” como default
+        String last = String.format("t%04d", frames-1);
+        Files.copy(dir.resolve("particles_"+last+".csv"), dir.resolve("particles.csv"), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        Files.copy(dir.resolve("neighbours_"+last+".txt"), dir.resolve("neighbours.txt"), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+
+        // metrics.csv
+        Files.write(dir.resolve("metrics.csv"), metrics);
+
+        System.out.printf(java.util.Locale.US,
+            "✅ Listo. Frames=%d | Resultados en %s%n", frames, dir);
+    }
+
+    private static void step(List<Particle> ps, double L, double dt, boolean periodic) {
+        for (Particle p : ps) {
+            p.x += p.vx * dt; p.y += p.vy * dt;
+            if (periodic) {
+                if (p.x < 0) p.x += L; if (p.x >= L) p.x -= L;
+                if (p.y < 0) p.y += L; if (p.y >= L) p.y -= L;
+            } else {
+                if (p.x < p.r) { p.x = p.r; p.vx = -p.vx; }
+                if (p.x > L - p.r) { p.x = L - p.r; p.vx = -p.vx; }
+                if (p.y < p.r) { p.y = p.r; p.vy = -p.vy; }
+                if (p.y > L - p.r) { p.y = L - p.r; p.vy = -p.vy; }
+            }
+        }
+    }
+
+    private static long diffCount(Map<Integer, Set<Integer>> A, Map<Integer, Set<Integer>> B) {
+        long d=0;
+        for (var e : A.entrySet()) {
+            Set<Integer> a = e.getValue();
+            Set<Integer> b = B.getOrDefault(e.getKey(), Set.of());
+            if (!a.equals(b)) {
+                Set<Integer> tmp = new HashSet<>(a);
+                tmp.removeAll(b);
+                d += tmp.size();
+                tmp.clear(); tmp.addAll(b); tmp.removeAll(a);
+                d += tmp.size();
+            }
+        }
+        return d;
+    }
+
+    private static void writeParticles(Path file, List<Particle> ps) throws IOException {
+        try (BufferedWriter w = Files.newBufferedWriter(file)) {
+            w.write("id,x,y,r,vx,vy\n");
+            for (Particle p : ps) {
+                w.write(String.format(java.util.Locale.US,
+                    "%d,%.6f,%.6f,%.6f,%.6f,%.6f%n", p.id,p.x,p.y,p.r,p.vx,p.vy));
+            }
+        }
+    }
+    private static void writeNeighbours(Path file, Map<Integer, Set<Integer>> neigh) throws IOException {
+        try (BufferedWriter w = Files.newBufferedWriter(file)) {
+            for (var e : neigh.entrySet()) {
+                String list = e.getValue().stream().sorted().map(Object::toString)
+                               .collect(Collectors.joining(","));
+                w.write(e.getKey() + ": [" + list + "]");
+                w.newLine();
+            }
+        }
     }
 }
