@@ -9,8 +9,8 @@ import java.util.stream.Collectors;
 /**
  *  java -jar simulacion/cim.jar [config.properties]
  *  Salidas por frame: out/<base>/particles_t####.csv, neighbours_t####.txt
- *  Además, copia "último" como particles.csv y neighbours.txt
- *  Escribe metrics.csv con tiempos y comparaciones (CIM y brute).
+ *  Copias: particles.csv / neighbours.txt (último frame)
+ *  metrics.csv: tiempos y comparaciones (solo CIM).
  */
 public class Main {
 
@@ -33,43 +33,43 @@ public class Main {
         double  L   = req(P,"L", Double::parseDouble);
         int     M   = req(P,"M", Integer::parseInt);
         double  rc  = req(P,"rc",Double::parseDouble);
-        boolean periodic = Boolean.parseBoolean(P.getProperty("periodic","false"));
+        boolean periodic = Boolean.parseBoolean(P.getProperty("periodic","true")); // tu default
         long    seed     = P.containsKey("seed") ? Long.parseLong(P.getProperty("seed")) : -1;
         String  outBase  = P.getProperty("outputBase","run");
 
-        // radios
-        boolean useRange = P.containsKey("rMin") && P.containsKey("rMax");
-        double rFixed = P.containsKey("r") ? Double.parseDouble(P.getProperty("r")) : -1;
-        double rMin = useRange ? Double.parseDouble(P.getProperty("rMin")) : rFixed;
-        double rMax = useRange ? Double.parseDouble(P.getProperty("rMax")) : rFixed;
-        if (rFixed < 0 && !useRange) throw new IllegalArgumentException("Definí r o (rMin,rMax)");
+        // NUEVO: modo de interacción
+        boolean useRadii = Boolean.parseBoolean(P.getProperty("useRadii","false"));
+        // Si usás radios, podés definir r fijo o rMin/rMax; si no, los forzamos a 0.
 
-        // dinámica para animación
-        int frames = Integer.parseInt(P.getProperty("frames","1"));
-        double dt  = Double.parseDouble(P.getProperty("dt","0.1"));
-        double vmax= Double.parseDouble(P.getProperty("vmax","0.0")); // 0 => quietas
-        boolean compareBrute = Boolean.parseBoolean(P.getProperty("compareBrute","false"));
+        boolean hasRange = P.containsKey("rMin") && P.containsKey("rMax");
+        double rFixed = P.containsKey("r") ? Double.parseDouble(P.getProperty("r")) : 0.0;
+        double rMin = hasRange ? Double.parseDouble(P.getProperty("rMin")) : rFixed;
+        double rMax = hasRange ? Double.parseDouble(P.getProperty("rMax")) : rFixed;
 
         Random rnd = (seed >= 0) ? new Random(seed) : new Random();
 
-        // generar partículas (no solapadas, rechazo simple)
+        // generar partículas (rechazo simple solo si useRadii=true)
         List<Particle> ps = new ArrayList<>(N);
         for (int id = 0; id < N; id++) {
-            double r = useRange ? (rMin + rnd.nextDouble()*(rMax - rMin)) : rFixed;
+            double r = useRadii ? (hasRange ? (rMin + rnd.nextDouble()*(rMax - rMin)) : rFixed) : 0.0;
             double x, y; int tries=0; boolean ok;
             do {
                 x = rnd.nextDouble()*L; y = rnd.nextDouble()*L; ok=true;
-                for (Particle p : ps) {
-                    double dx = x - p.x, dy = y - p.y;
-                    if (periodic) {
-                        if (dx > 0.5*L) dx -= L; if (dx < -0.5*L) dx += L;
-                        if (dy > 0.5*L) dy -= L; if (dy < -0.5*L) dy += L;
+                if (useRadii) {
+                    for (Particle p : ps) {
+                        double dx = x - p.x, dy = y - p.y;
+                        if (periodic) {
+                            if (dx > 0.5*L) dx -= L; if (dx < -0.5*L) dx += L;
+                            if (dy > 0.5*L) dy -= L; if (dy < -0.5*L) dy += L;
+                        }
+                        double minD = (r + p.r);
+                        if (dx*dx + dy*dy < (minD*minD)) { ok=false; break; }
                     }
-                    double minD = (r + p.r);
-                    if (dx*dx + dy*dy < (minD*minD)) { ok=false; break; }
                 }
             } while (!ok && ++tries < 2000);
             Particle np = new Particle(id,x,y,r);
+            // Velocidades opcionales para animación
+            double vmax = Double.parseDouble(P.getProperty("vmax","0.0"));
             if (vmax > 0) { np.vx = (rnd.nextDouble()*2-1)*vmax; np.vy = (rnd.nextDouble()*2-1)*vmax; }
             ps.add(np);
         }
@@ -82,10 +82,11 @@ public class Main {
         List<String> metrics = new ArrayList<>();
         metrics.add("frame,method,ms,comparisons,neighbors_total");
 
-        // simulación (frames)
+        int frames = Integer.parseInt(P.getProperty("frames","1"));
+        double dt  = Double.parseDouble(P.getProperty("dt","0.1"));
+
         for (int f=0; f<frames; f++) {
-            // vecindad CIM
-            CellIndexMethod cim = new CellIndexMethod(L, rc, M, periodic);
+            CellIndexMethod cim = new CellIndexMethod(L, rc, M, periodic, useRadii);
             long t0 = System.nanoTime();
             Map<Integer, Set<Integer>> neigh = cim.neighbours(ps);
             long dtCim = System.nanoTime() - t0;
@@ -95,41 +96,24 @@ public class Main {
             metrics.add(String.format(java.util.Locale.US,
                 "%d,CIM,%.3f,%d,%d", f, dtCim/1e6, cim.comparisons, neighborsTotal));
 
-            // fuerza bruta (opcional)
-            if (compareBrute) {
-                long tb0 = System.nanoTime();
-                var brute = CellIndexMethod.bruteForce(ps, L, rc, periodic);
-                long dtBrute = System.nanoTime() - tb0;
-                long neighborsTotalB = brute.neigh.values().stream().mapToLong(Set::size).sum();
-
-                // chequeo de correctitud: diferencias
-                if (!neigh.equals(brute.neigh)) {
-                    long diffs = diffCount(neigh, brute.neigh);
-                    System.err.println("⚠️  CIM vs Brute difieren en " + diffs + " enlaces.");
-                }
-                metrics.add(String.format(java.util.Locale.US,
-                    "%d,BRUTE,%.3f,%d,%d", f, dtBrute/1e6, brute.comparisons, neighborsTotalB));
-            }
-
-            // escribir snapshot
             String tag = String.format("t%04d", f);
             writeParticles(dir.resolve("particles_"+tag+".csv"), ps);
             writeNeighbours(dir.resolve("neighbours_"+tag+".txt"), neigh);
 
-            // avanzar posiciones para próximo frame
-            if (f < frames-1 && vmax > 0) step(ps, L, dt, periodic);
+            if (f < frames-1) step(ps, L, dt, periodic);
         }
 
-        // copiar “último” como default
         String last = String.format("t%04d", frames-1);
-        Files.copy(dir.resolve("particles_"+last+".csv"), dir.resolve("particles.csv"), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-        Files.copy(dir.resolve("neighbours_"+last+".txt"), dir.resolve("neighbours.txt"), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        Files.copy(dir.resolve("particles_"+last+".csv"), dir.resolve("particles.csv"),
+                   java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        Files.copy(dir.resolve("neighbours_"+last+".txt"), dir.resolve("neighbours.txt"),
+                   java.nio.file.StandardCopyOption.REPLACE_EXISTING);
 
-        // metrics.csv
         Files.write(dir.resolve("metrics.csv"), metrics);
 
         System.out.printf(java.util.Locale.US,
-            "✅ Listo. Frames=%d | Resultados en %s%n", frames, dir);
+            "✅ Listo. Frames=%d | useRadii=%s | periodic=%s | Resultados en %s%n",
+            frames, useRadii, periodic, dir);
     }
 
     private static void step(List<Particle> ps, double L, double dt, boolean periodic) {
@@ -145,22 +129,6 @@ public class Main {
                 if (p.y > L - p.r) { p.y = L - p.r; p.vy = -p.vy; }
             }
         }
-    }
-
-    private static long diffCount(Map<Integer, Set<Integer>> A, Map<Integer, Set<Integer>> B) {
-        long d=0;
-        for (var e : A.entrySet()) {
-            Set<Integer> a = e.getValue();
-            Set<Integer> b = B.getOrDefault(e.getKey(), Set.of());
-            if (!a.equals(b)) {
-                Set<Integer> tmp = new HashSet<>(a);
-                tmp.removeAll(b);
-                d += tmp.size();
-                tmp.clear(); tmp.addAll(b); tmp.removeAll(a);
-                d += tmp.size();
-            }
-        }
-        return d;
     }
 
     private static void writeParticles(Path file, List<Particle> ps) throws IOException {

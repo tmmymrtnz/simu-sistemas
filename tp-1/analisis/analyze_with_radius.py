@@ -6,63 +6,36 @@ import matplotlib.pyplot as plt
 JAR = pathlib.Path(__file__).resolve().parents[1] / "simulacion/cim.jar"
 
 def run_java(props: dict):
-    """Corre el JAR (CIM puntuales) y devuelve pos, vecinos (CIM), métricas."""
+    """Corre el JAR y devuelve: pos, vecinos, ms y comparaciones (del CIM interno)."""
     props = props.copy()
     props.setdefault("frames", 1)
-    props.setdefault("useRadii", False)     # PUNTUALES (centro-centro)
-    base = props.get("outputBase", "bench_points")
+    base = props.get("outputBase", "bench_r")
     uniq = f"{base}_N{props['N']}_M{props['M']}_seed{props.get('seed','-')}_{int(time.time()*1e6)%1_000_000}"
     props["outputBase"] = uniq
 
     with tempfile.NamedTemporaryFile("w+", suffix=".properties", delete=False) as tf:
-        for k, v in props.items():
-            tf.write(f"{k}={v}\n")
+        for k,v in props.items(): tf.write(f"{k}={v}\n")
         tf.flush()
-        subprocess.run(["java", "-jar", str(JAR), tf.name],
+        subprocess.run(["java","-jar",str(JAR),tf.name],
                        stdout=subprocess.DEVNULL, check=True)
 
     out_dir = pathlib.Path("out") / uniq
     metr = pd.read_csv(out_dir / "metrics.csv")
     row = metr[metr["method"] == "CIM"].iloc[0]
-    cim_ms = float(row["ms"])
-    cim_comps = int(row["comparisons"])
+    ms = float(row["ms"]); comps = int(row["comparisons"])
 
-    pos = pd.read_csv(out_dir / "particles.csv")     # id,x,y,r,vx,vy
-    neigh_cim = {}
+    pos = pd.read_csv(out_dir / "particles.csv")
+    neigh = {}
     with open(out_dir / "neighbours.txt") as fh:
         for ln in fh:
             pid, arr = ln.split(":", 1)
             arr = arr.strip()
             if arr.startswith("[") and arr.endswith("]"):
                 items = [s.strip() for s in arr[1:-1].split(",") if s.strip()]
-                neigh_cim[int(pid)] = {int(x) for x in items}
+                neigh[int(pid)] = {int(x) for x in items}
             else:
-                neigh_cim[int(pid)] = set()
-
-    return out_dir, pos, neigh_cim, cim_ms, cim_comps
-
-def brute_points_numpy(pos: pd.DataFrame, L: float, rc: float, periodic: bool):
-    """Fuerza bruta centro-centro (puntuales)."""
-    t0 = time.perf_counter()
-    xy = pos[["x","y"]].values
-    N  = len(pos)
-
-    dx = np.abs(xy[:,0][:,None] - xy[:,0][None,:])
-    dy = np.abs(xy[:,1][:,None] - xy[:,1][None,:])
-    if periodic:
-        dx = np.minimum(dx, L - dx)
-        dy = np.minimum(dy, L - dy)
-    d2 = dx*dx + dy*dy
-    mask = (d2 <= rc*rc) & (np.triu(np.ones((N,N), bool), 1))
-    neigh = {int(i): set() for i in pos["id"].values}
-    ids = pos["id"].values
-    ii, jj = np.where(mask)
-    for a,b in zip(ii,jj):
-        ia, ib = int(ids[a]), int(ids[b])
-        neigh[ia].add(ib); neigh[ib].add(ia)
-    ms = (time.perf_counter() - t0) * 1000
-    comps = N*(N-1)//2
-    return neigh, ms, comps
+                neigh[int(pid)] = set()
+    return out_dir, pos, neigh, ms, comps
 
 def diff_count(A: dict, B: dict) -> int:
     d=0
@@ -74,9 +47,9 @@ def diff_count(A: dict, B: dict) -> int:
 def ensure_dir(p: pathlib.Path):
     os.makedirs(p, exist_ok=True)
 
-def select_three_M_punctual(L: float, rc: float):
-    """Devuelve [M_bajo, M_medio, M_max] respetando M <= floor(L/rc)."""
-    M_geom = max(1, int(math.floor(L / rc)))
+def select_three_M_radii(L: float, rc: float, r: float):
+    """Devuelve [M_bajo, M_medio, M_max] con M ≤ floor(L/(rc+2r))."""
+    M_geom = max(1, int(math.floor(L / (rc + 2*r))))
     Ms = sorted(set([
         max(1, int(math.ceil(0.25 * M_geom))),
         max(1, int(math.ceil(0.50 * M_geom))),
@@ -85,41 +58,47 @@ def select_three_M_punctual(L: float, rc: float):
     return M_geom, Ms
 
 def main():
-    # --- Parámetros Parte 2: puntuales ---
-    L, rc = 20.0, 1.0
+    # --- Parámetros Parte 3 ---
+    L, rc, r = 20.0, 1.0, 0.25
     PERIODIC = True
+    USE_RADII = True
     REPS = 10
 
-    M_geom, Ms = select_three_M_punctual(L, rc)  # tres Ms: bajo, medio, máximo
-    Ns = [200, 500, 1000, 2000]
+    M_geom, Ms = select_three_M_radii(L, rc, r)  # tres Ms: bajo, medio, máximo
+    Ns = [10, 200, 500, 1000, 2000]
 
-    print(f"Criterio geométrico (puntuales): M ≤ {M_geom} (ℓ ≥ rc)")
+    print(f"Criterio geométrico: M ≤ {M_geom} (ℓ ≥ {rc + 2*r})")
     print(f"Usando M = {Ms} (bajo, medio, máximo)\n")
 
-    all_rows = []
+    rows = []
     for N in Ns:
         for M in Ms:
             for rep in range(REPS):
-                seed = 4242 + rep  # variar snapshot por repetición
-                _, pos, neigh_cim, cim_ms, cim_comps = run_java(dict(
-                    N=N, L=L, M=M, rc=rc, useRadii=False, periodic=PERIODIC,
-                    outputBase="bench_points", seed=seed, frames=1
+                seed = 12345 + rep
+                # --- “CIM” con M elegido ---
+                _, pos_cim, neigh_cim, cim_ms, cim_comps = run_java(dict(
+                    N=N, L=L, M=M, rc=rc, useRadii=USE_RADII, r=r,
+                    periodic=PERIODIC, outputBase="bench_r", seed=seed, frames=1
                 ))
-                neigh_b, brute_ms, brute_comps = brute_points_numpy(pos, L, rc, PERIODIC)
-                mism = diff_count(neigh_cim, neigh_b)
+                # --- “BRUTE” = correr con M=1 sobre el MISMO snapshot (misma seed) ---
+                _, pos_br, neigh_br, brute_ms, brute_comps = run_java(dict(
+                    N=N, L=L, M=1, rc=rc, useRadii=USE_RADII, r=r,
+                    periodic=PERIODIC, outputBase="bench_r_brute", seed=seed, frames=1
+                ))
+                # (posiciones coinciden porque seed es la misma)
+                mism = diff_count(neigh_cim, neigh_br)
                 speed = brute_ms / cim_ms if cim_ms > 0 else np.nan
-                all_rows.append((N, M, rep, cim_ms, brute_ms, cim_comps, brute_comps, speed, mism))
+                rows.append((N, M, rep, cim_ms, brute_ms, cim_comps, brute_comps, speed, mism))
 
-    df = pd.DataFrame(all_rows, columns=[
+    df = pd.DataFrame(rows, columns=[
         "N","M","rep","CIM_ms","BRUTE_ms","CIM_comps","BRUTE_comps","speedup","mismatches"
     ])
 
-    # ---- Agregación: promedio y desviación estándar por (N,M) ----
+    # --- Promedios y desvíos ---
     agg_mean = df.groupby(["N","M"]).mean(numeric_only=True)
     agg_std  = df.groupby(["N","M"]).std(numeric_only=True).fillna(0.0)
 
-    # Mostrar tablas
-    print("== Parte 2: Puntuales (centro-centro) — Promedios ==")
+    print("== Parte 3: Con radio (borde-borde, r=0.25) — Promedios ==")
     print("\nTiempos (ms, mean):")
     print(agg_mean.reset_index().pivot(index="N", columns="M", values=["CIM_ms","BRUTE_ms"]))
     print("\nTiempos (ms, std):")
@@ -133,18 +112,17 @@ def main():
     print("\nMismatches (mean):")
     print(agg_mean.reset_index().pivot(index="N", columns="M", values="mismatches"))
 
-    # ---- Guardar CSVs de resumen ----
-    out_summary = pathlib.Path("out/bench_points_summary")
+    # --- Guardar CSVs y gráficos ---
+    out_summary = pathlib.Path("out/bench_r_summary")
     ensure_dir(out_summary)
     agg_mean.to_csv(out_summary / "summary_mean.csv")
     agg_std.to_csv(out_summary / "summary_std.csv")
     df.to_csv(out_summary / "raw_runs.csv", index=False)
 
-    # ---- Gráficos con eje horizontal N (una línea por M) ----
     Ns_sorted = sorted(df["N"].unique())
     Ms_sorted = sorted(df["M"].unique())
 
-    def plot_metric(metric: str, ylabel: str, fname: str, title_extra=""):
+    def plot_metric(metric: str, ylabel: str, fname: str):
         plt.figure()
         for M in Ms_sorted:
             y = [agg_mean.loc[(N,M), metric] for N in Ns_sorted]
@@ -152,14 +130,13 @@ def main():
             plt.errorbar(Ns_sorted, y, yerr=yerr, marker='o', label=f"M={M}")
         plt.xlabel("N (partículas)")
         plt.ylabel(ylabel)
-        plt.title(f"{metric} vs N (puntuales, periodic={PERIODIC}, {REPS} reps){title_extra}")
+        plt.title(f"{metric} vs N (r=0.25, periodic={PERIODIC}, {REPS} reps)")
         plt.legend()
         plt.tight_layout()
         plt.savefig(out_summary / fname, dpi=150)
-        # plt.show()
 
     plot_metric("CIM_ms", "Tiempo CIM (ms)", "cim_ms_vs_N.png")
-    plot_metric("BRUTE_ms", "Tiempo brute (ms)", "brute_ms_vs_N.png")
+    plot_metric("BRUTE_ms", "Tiempo BRUTE=Java(M=1) (ms)", "brute_ms_vs_N.png")
     plot_metric("speedup", "Speedup (BRUTE/CIM)", "speedup_vs_N.png")
     plot_metric("mismatches", "Mismatches (promedio)", "mismatches_vs_N.png")
 
