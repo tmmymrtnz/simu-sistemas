@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
-import subprocess, tempfile, pathlib, time, math, os
+import subprocess, tempfile, pathlib, time, math, os, shutil
 import numpy as np, pandas as pd
 import matplotlib.pyplot as plt
 
 JAR = pathlib.Path(__file__).resolve().parents[1] / "simulacion/cim.jar"
 
 def run_java(props: dict):
-    """Corre el JAR (CIM puntuales) y devuelve pos, vecinos (CIM), métricas."""
+    """Corre el JAR y devuelve: out_dir, pos, neigh, ms y comparaciones (del CIM interno)."""
     props = props.copy()
     props.setdefault("frames", 1)
-    props.setdefault("useRadii", False)     # PUNTUALES (centro-centro)
     base = props.get("outputBase", "bench_points")
     uniq = f"{base}_N{props['N']}_M{props['M']}_seed{props.get('seed','-')}_{int(time.time()*1e6)%1_000_000}"
     props["outputBase"] = uniq
@@ -24,45 +23,21 @@ def run_java(props: dict):
     out_dir = pathlib.Path("out") / uniq
     metr = pd.read_csv(out_dir / "metrics.csv")
     row = metr[metr["method"] == "CIM"].iloc[0]
-    cim_ms = float(row["ms"])
-    cim_comps = int(row["comparisons"])
+    ms = float(row["ms"])
+    comps = int(row["comparisons"])
 
-    pos = pd.read_csv(out_dir / "particles.csv")     # id,x,y,r,vx,vy
-    neigh_cim = {}
+    pos = pd.read_csv(out_dir / "particles.csv")
+    neigh = {}
     with open(out_dir / "neighbours.txt") as fh:
         for ln in fh:
             pid, arr = ln.split(":", 1)
             arr = arr.strip()
             if arr.startswith("[") and arr.endswith("]"):
                 items = [s.strip() for s in arr[1:-1].split(",") if s.strip()]
-                neigh_cim[int(pid)] = {int(x) for x in items}
+                neigh[int(pid)] = {int(x) for x in items}
             else:
-                neigh_cim[int(pid)] = set()
-
-    return out_dir, pos, neigh_cim, cim_ms, cim_comps
-
-def brute_points_numpy(pos: pd.DataFrame, L: float, rc: float, periodic: bool):
-    """Fuerza bruta centro-centro (puntuales)."""
-    t0 = time.perf_counter()
-    xy = pos[["x","y"]].values
-    N  = len(pos)
-
-    dx = np.abs(xy[:,0][:,None] - xy[:,0][None,:])
-    dy = np.abs(xy[:,1][:,None] - xy[:,1][None,:])
-    if periodic:
-        dx = np.minimum(dx, L - dx)
-        dy = np.minimum(dy, L - dy)
-    d2 = dx*dx + dy*dy
-    mask = (d2 <= rc*rc) & (np.triu(np.ones((N,N), bool), 1))
-    neigh = {int(i): set() for i in pos["id"].values}
-    ids = pos["id"].values
-    ii, jj = np.where(mask)
-    for a,b in zip(ii,jj):
-        ia, ib = int(ids[a]), int(ids[b])
-        neigh[ia].add(ib); neigh[ib].add(ia)
-    ms = (time.perf_counter() - t0) * 1000
-    comps = N*(N-1)//2
-    return neigh, ms, comps
+                neigh[int(pid)] = set()
+    return out_dir, pos, neigh, ms, comps
 
 def diff_count(A: dict, B: dict) -> int:
     d=0
@@ -88,25 +63,39 @@ def main():
     # --- Parámetros Parte 2: puntuales ---
     L, rc = 20.0, 1.0
     PERIODIC = True
+    USE_RADII = False   # puntuales (centro-centro)
     REPS = 10
 
     M_geom, Ms = select_three_M_punctual(L, rc)  # tres Ms: bajo, medio, máximo
-    Ns = [200, 500, 1000, 2000]
+    Ns = [10, 200, 500, 1000, 2000]
 
     print(f"Criterio geométrico (puntuales): M ≤ {M_geom} (ℓ ≥ rc)")
     print(f"Usando M = {Ms} (bajo, medio, máximo)\n")
 
     all_rows = []
+    created_dirs = set()
+
     for N in Ns:
         for M in Ms:
             for rep in range(REPS):
-                seed = 4242 + rep  # variar snapshot por repetición
-                _, pos, neigh_cim, cim_ms, cim_comps = run_java(dict(
-                    N=N, L=L, M=M, rc=rc, useRadii=False, periodic=PERIODIC,
+                seed = 4242 + rep  # misma semilla para CIM y BRUTE=Java(M=1)
+
+                # --- CIM con M elegido ---
+                out_cim, pos_cim, neigh_cim, cim_ms, cim_comps = run_java(dict(
+                    N=N, L=L, M=M, rc=rc, useRadii=USE_RADII, periodic=PERIODIC,
                     outputBase="bench_points", seed=seed, frames=1
                 ))
-                neigh_b, brute_ms, brute_comps = brute_points_numpy(pos, L, rc, PERIODIC)
-                mism = diff_count(neigh_cim, neigh_b)
+                created_dirs.add(out_cim)
+
+                # --- BRUTE = correr Java con M=1 (mismo snapshot por seed) ---
+                out_br, pos_br, neigh_br, brute_ms, brute_comps = run_java(dict(
+                    N=N, L=L, M=1, rc=rc, useRadii=USE_RADII, periodic=PERIODIC,
+                    outputBase="bench_points_brute", seed=seed, frames=1
+                ))
+                created_dirs.add(out_br)
+
+                # chequeo: seeds iguales ⇒ posiciones deberían coincidir en ids
+                mism = diff_count(neigh_cim, neigh_br)
                 speed = brute_ms / cim_ms if cim_ms > 0 else np.nan
                 all_rows.append((N, M, rep, cim_ms, brute_ms, cim_comps, brute_comps, speed, mism))
 
@@ -144,7 +133,7 @@ def main():
     Ns_sorted = sorted(df["N"].unique())
     Ms_sorted = sorted(df["M"].unique())
 
-    def plot_metric(metric: str, ylabel: str, fname: str, title_extra=""):
+    def plot_metric(metric: str, ylabel: str, fname: str):
         plt.figure()
         for M in Ms_sorted:
             y = [agg_mean.loc[(N,M), metric] for N in Ns_sorted]
@@ -152,18 +141,25 @@ def main():
             plt.errorbar(Ns_sorted, y, yerr=yerr, marker='o', label=f"M={M}")
         plt.xlabel("N (partículas)")
         plt.ylabel(ylabel)
-        plt.title(f"{metric} vs N (puntuales, periodic={PERIODIC}, {REPS} reps){title_extra}")
+        plt.title(f"{metric} vs N (puntuales, periodic={PERIODIC}, {REPS} reps)")
         plt.legend()
         plt.tight_layout()
         plt.savefig(out_summary / fname, dpi=150)
-        # plt.show()
 
     plot_metric("CIM_ms", "Tiempo CIM (ms)", "cim_ms_vs_N.png")
-    plot_metric("BRUTE_ms", "Tiempo brute (ms)", "brute_ms_vs_N.png")
+    plot_metric("BRUTE_ms", "Tiempo BRUTE=Java(M=1) (ms)", "brute_ms_vs_N.png")
     plot_metric("speedup", "Speedup (BRUTE/CIM)", "speedup_vs_N.png")
     plot_metric("mismatches", "Mismatches (promedio)", "mismatches_vs_N.png")
 
     print(f"\n📈 Guardados gráficos y CSVs en: {out_summary}")
+
+    # ---- Limpieza: borrar TODAS las carpetas out/ creadas por este script ----
+    for d in sorted(created_dirs):
+        try:
+            shutil.rmtree(d, ignore_errors=True)
+        except Exception:
+            pass
+    print(f"🧹 Limpieza hecha: eliminadas {len(created_dirs)} carpetas temporales bajo out/")
 
 if __name__ == "__main__":
     main()

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import subprocess, tempfile, pathlib, time, math, os
+import subprocess, tempfile, pathlib, time, math, os, shutil
 import numpy as np, pandas as pd
 import matplotlib.pyplot as plt
 
@@ -14,7 +14,8 @@ def run_java(props: dict):
     props["outputBase"] = uniq
 
     with tempfile.NamedTemporaryFile("w+", suffix=".properties", delete=False) as tf:
-        for k,v in props.items(): tf.write(f"{k}={v}\n")
+        for k,v in props.items():
+            tf.write(f"{k}={v}\n")
         tf.flush()
         subprocess.run(["java","-jar",str(JAR),tf.name],
                        stdout=subprocess.DEVNULL, check=True)
@@ -71,21 +72,26 @@ def main():
     print(f"Usando M = {Ms} (bajo, medio, máximo)\n")
 
     rows = []
+    created_dirs = set()
+
     for N in Ns:
         for M in Ms:
             for rep in range(REPS):
                 seed = 12345 + rep
-                # --- “CIM” con M elegido ---
-                _, pos_cim, neigh_cim, cim_ms, cim_comps = run_java(dict(
+                # --- CIM con M elegido ---
+                out_cim, pos_cim, neigh_cim, cim_ms, cim_comps = run_java(dict(
                     N=N, L=L, M=M, rc=rc, useRadii=USE_RADII, r=r,
                     periodic=PERIODIC, outputBase="bench_r", seed=seed, frames=1
                 ))
-                # --- “BRUTE” = correr con M=1 sobre el MISMO snapshot (misma seed) ---
-                _, pos_br, neigh_br, brute_ms, brute_comps = run_java(dict(
+                created_dirs.add(out_cim)
+
+                # --- BRUTE = correr con M=1 (mismo snapshot por seed) ---
+                out_br, pos_br, neigh_br, brute_ms, brute_comps = run_java(dict(
                     N=N, L=L, M=1, rc=rc, useRadii=USE_RADII, r=r,
                     periodic=PERIODIC, outputBase="bench_r_brute", seed=seed, frames=1
                 ))
-                # (posiciones coinciden porque seed es la misma)
+                created_dirs.add(out_br)
+
                 mism = diff_count(neigh_cim, neigh_br)
                 speed = brute_ms / cim_ms if cim_ms > 0 else np.nan
                 rows.append((N, M, rep, cim_ms, brute_ms, cim_comps, brute_comps, speed, mism))
@@ -141,6 +147,14 @@ def main():
     plot_metric("mismatches", "Mismatches (promedio)", "mismatches_vs_N.png")
 
     print(f"\n📈 Guardados gráficos y CSVs en: {out_summary}")
+
+    # --- Limpieza: borrar TODAS las carpetas out/ creadas en esta corrida ---
+    for d in sorted(created_dirs):
+        try:
+            shutil.rmtree(d, ignore_errors=True)
+        except Exception:
+            pass
+    print(f"🧹 Limpieza hecha: eliminadas {len(created_dirs)} carpetas temporales bajo out/")
 
 if __name__ == "__main__":
     main()
