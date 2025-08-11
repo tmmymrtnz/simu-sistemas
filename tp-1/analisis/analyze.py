@@ -60,16 +60,27 @@ def select_three_M_punctual(L: float, rc: float):
     return M_geom, Ms
 
 def main():
-    # --- Parámetros Parte 2: puntuales ---
+    # --- Parámetros Parte 2: partículas con radio ---
     L, rc = 20.0, 1.0
+    r = 0.25  # radio de partícula (según consigna)
     PERIODIC = True
-    USE_RADII = False   # puntuales (centro-centro)
+    USE_RADII = True  
     REPS = 10
 
-    M_geom, Ms = select_three_M_punctual(L, rc)  # tres Ms: bajo, medio, máximo
+    def select_three_M_with_radius(L: float, rc: float, r: float):
+        """Devuelve [M_bajo, M_medio, M_max] respetando M <= floor(L/(rc+2r))."""
+        M_geom = max(1, int(math.floor(L / (rc + 2*r))))
+        Ms = sorted(set([
+            max(1, int(math.ceil(0.25 * M_geom))),
+            max(1, int(math.ceil(0.50 * M_geom))),
+            M_geom
+        ]))
+        return M_geom, Ms
+
+    M_geom, Ms = select_three_M_with_radius(L, rc, r)  # tres Ms: bajo, medio, máximo
     Ns = [10, 200, 500, 1000, 2000]
 
-    print(f"Criterio geométrico (puntuales): M ≤ {M_geom} (ℓ ≥ rc)")
+    print(f"Criterio geométrico (con radio r={r}): M ≤ {M_geom} (ℓ ≥ rc+2r)")
     print(f"Usando M = {Ms} (bajo, medio, máximo)\n")
 
     all_rows = []
@@ -82,14 +93,14 @@ def main():
 
                 # --- CIM con M elegido ---
                 out_cim, pos_cim, neigh_cim, cim_ms, cim_comps = run_java(dict(
-                    N=N, L=L, M=M, rc=rc, useRadii=USE_RADII, periodic=PERIODIC,
+                    N=N, L=L, M=M, rc=rc, useRadii=USE_RADII, periodic=PERIODIC, r=r,
                     outputBase="bench_points", seed=seed, frames=1
                 ))
                 created_dirs.add(out_cim)
 
                 # --- BRUTE = correr Java con M=1 (mismo snapshot por seed) ---
                 out_br, pos_br, neigh_br, brute_ms, brute_comps = run_java(dict(
-                    N=N, L=L, M=1, rc=rc, useRadii=USE_RADII, periodic=PERIODIC,
+                    N=N, L=L, M=1, rc=rc, useRadii=USE_RADII, periodic=PERIODIC, r=r,
                     outputBase="bench_points_brute", seed=seed, frames=1
                 ))
                 created_dirs.add(out_br)
@@ -152,11 +163,8 @@ def main():
     plot_metric("mismatches", "Mismatches (promedio)", "mismatches_vs_N.png")
 
     # === EJERCICIO 3: Comparación de M y tiempos de ejecución para distintas densidades ===
-    print("\n=== EJERCICIO 3: Comparación de M y tiempos de ejecución para distintas densidades ===\n")
+    print(f"\n=== EJERCICIO 3: Comparación de M y tiempos de ejecución para distintas densidades (con radio r={r}) ===\n")
     # Teórico
-    L = 20.0
-    rc = 1.0
-    r = 0.0  # puntuales
     Ns_teo = np.array(Ns_sorted)
     densities = Ns_teo / (L*L)
     def optimal_M(L, rc, r):
@@ -181,11 +189,11 @@ def main():
     plt.grid(True)
     plt.tight_layout()
     plt.savefig(out_summary / 'particles_per_cell_vs_density_teo.png', dpi=150)
-    print(f"M óptimo teórico (puntuales): M = {M_opt_teo} para todos los N y densidades (depende solo de L, rc, r)")
+    print(f"M óptimo teórico (con radio r={r}): M = {M_opt_teo} para todos los N y densidades (depende solo de L, rc, r)")
     print("(Ver gráficos teóricos en la carpeta de salida)")
 
     # Comparativa empírica para cada N
-    # Para cada N, buscar el M con menor tiempo CIM_ms promedio (sin warning)
+    # Para cada N, buscar el M con menor tiempo CIM_ms promedio
     best_Ms = (
         agg_mean.reset_index()[['N','M','CIM_ms']]
         .sort_values(['N','M'])
