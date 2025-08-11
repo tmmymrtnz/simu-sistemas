@@ -151,7 +151,101 @@ def main():
     plot_metric("speedup", "Speedup (BRUTE/CIM)", "speedup_vs_N.png")
     plot_metric("mismatches", "Mismatches (promedio)", "mismatches_vs_N.png")
 
-    print(f"\n📈 Guardados gráficos y CSVs en: {out_summary}")
+    # === EJERCICIO 3: Comparación de M y tiempos de ejecución para distintas densidades ===
+    print("\n=== EJERCICIO 3: Comparación de M y tiempos de ejecución para distintas densidades ===\n")
+    # Teórico
+    L = 20.0
+    rc = 1.0
+    r = 0.0  # puntuales
+    Ns_teo = np.array(Ns_sorted)
+    densities = Ns_teo / (L*L)
+    def optimal_M(L, rc, r):
+        return max(1, int(math.floor(L / (rc + 2*r))))
+    M_opt_teo = optimal_M(L, rc, r)
+    particles_per_cell = Ns_teo / (M_opt_teo**2)
+    # Gráfico M óptimo teórico vs densidad
+    plt.figure()
+    plt.plot(densities, [M_opt_teo]*len(densities), marker='o')
+    plt.xlabel('Densidad (N/L²)')
+    plt.ylabel('M óptimo teórico')
+    plt.title('M óptimo teórico vs Densidad')
+    plt.grid(True)
+    plt.tight_layout()
+    plt.savefig(out_summary / 'm_opt_teo_vs_density.png', dpi=150)
+    # Gráfico partículas por celda vs densidad
+    plt.figure()
+    plt.plot(densities, particles_per_cell, marker='s', color='orange')
+    plt.xlabel('Densidad (N/L²)')
+    plt.ylabel('Partículas por celda (N/M²)')
+    plt.title('Partículas por celda vs Densidad (M óptimo teórico)')
+    plt.grid(True)
+    plt.tight_layout()
+    plt.savefig(out_summary / 'particles_per_cell_vs_density_teo.png', dpi=150)
+    print(f"M óptimo teórico (puntuales): M = {M_opt_teo} para todos los N y densidades (depende solo de L, rc, r)")
+    print("(Ver gráficos teóricos en la carpeta de salida)")
+
+    # Comparativa empírica para cada N
+    # Para cada N, buscar el M con menor tiempo CIM_ms promedio (sin warning)
+    best_Ms = (
+        agg_mean.reset_index()[['N','M','CIM_ms']]
+        .sort_values(['N','M'])
+        .groupby('N', group_keys=False)
+        .apply(lambda g: g.loc[g['CIM_ms'].idxmin()][['N','M','CIM_ms']])
+        .reset_index(drop=True)
+    )
+    best_Ms['densidad'] = best_Ms['N'] / (L*L)
+    best_Ms = best_Ms.sort_values('N')
+
+    for N in Ns_sorted:
+        dens = N / (L*L)
+        print(f"Densidad={dens:.4f} | N={N}")
+        tabla = df[df['N'] == N][['M','CIM_ms']]
+        tabla_mean = tabla.groupby('M').mean(numeric_only=True).reset_index()
+        print(tabla_mean.rename(columns={'M':'M', 'CIM_ms':'Tiempo CIM (ms)'}).to_string(index=False, float_format='%.2f'))
+        # Para cada repetición, cuál fue el M óptimo
+        reps = df[df['N'] == N]['rep'].unique()
+        m_optimos = []
+        for rep in reps:
+            sub = df[(df['N'] == N) & (df['rep'] == rep)]
+            m_opt = sub.loc[sub['CIM_ms'].idxmin()]['M']
+            m_optimos.append(m_opt)
+        # Frecuencia de cada M como óptimo
+        from collections import Counter
+        freq = Counter(m_optimos)
+        total = len(m_optimos)
+        print("Frecuencia de M óptimo empírico en 10 repeticiones:")
+        for m in sorted(freq):
+            print(f"  M={int(m)}: {freq[m]}/{total} veces")
+        mean_m_opt = np.mean(m_optimos)
+        print(f"Valor medio de M óptimo empírico: {mean_m_opt:.2f}")
+        # Tiempo medio mínimo alcanzado
+        min_times = [df[(df['N']==N) & (df['rep']==rep) & (df['M']==m_optimos[i])]['CIM_ms'].values[0] for i,rep in enumerate(reps)]
+        print(f"Tiempo CIM óptimo promedio: {np.mean(min_times):.2f} ms\n")
+    print("\nResumen final: para cada densidad y N, el M óptimo empírico y su tiempo de ejecución mínimo:")
+    for _, row in best_Ms.iterrows():
+        print(f"Densidad={row['densidad']:.4f} | N={int(row['N'])} | M óptimo empírico={int(row['M'])} | Tiempo CIM óptimo={row['CIM_ms']:.2f} ms")
+    print(f"\nM óptimo teórico: M_opt = floor(L / (rc + 2r)) = {M_opt_teo}")
+
+    # Gráficos y tabla resumen de M óptimo empírico vs teórico
+    plt.figure()
+    plt.plot(best_Ms['densidad'], best_Ms['M'], marker='o', label='M óptimo empírico')
+    plt.axhline(M_opt_teo, color='gray', linestyle='--', label='M óptimo teórico')
+    plt.xlabel('Densidad (N/L²)')
+    plt.ylabel('M óptimo (empírico)')
+    plt.title('M óptimo empírico vs Densidad')
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    plt.savefig(out_summary / 'm_opt_emp_vs_density.png', dpi=150)
+    plt.figure()
+    plt.plot(best_Ms['densidad'], best_Ms['CIM_ms'], marker='o')
+    plt.xlabel('Densidad (N/L²)')
+    plt.ylabel('Tiempo mínimo CIM (ms)')
+    plt.title('Mejor tiempo CIM vs Densidad (M óptimo empírico)')
+    plt.grid(True)
+    plt.tight_layout()
+    plt.savefig(out_summary / 'min_cim_ms_vs_density.png', dpi=150)
+    best_Ms.to_csv(out_summary / "best_M_per_N.csv", index=False)
 
     # ---- Limpieza: borrar TODAS las carpetas out/ creadas por este script ----
     for d in sorted(created_dirs):
@@ -159,6 +253,7 @@ def main():
             shutil.rmtree(d, ignore_errors=True)
         except Exception:
             pass
+    print(f"\n📈 Guardados gráficos y CSVs en: {out_summary}")
     print(f"🧹 Limpieza hecha: eliminadas {len(created_dirs)} carpetas temporales bajo out/")
 
 if __name__ == "__main__":
