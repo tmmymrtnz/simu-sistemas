@@ -1,61 +1,69 @@
-TP-1 — HOW TO RUN EACH FILE (plain text)
 
-Prerequisites:
+# TP-1 — Guía rápida de uso y automatización
+### Integrantes
+- Matias Ignacio Luchetti
+- Sofia Paula Altman Vogl
+- Tomas Martinez
+
+## Requisitos
 - Java JDK 17+
-- Python 3.9+ and pip (install: pandas, matplotlib, pillow if saving GIF)
-- Optional: ffmpeg if saving MP4
+- Python 3.9+ y pip (instalar: pandas, matplotlib, pillow)
+- Opcional: ffmpeg si quieres guardar animaciones en MP4
 
-Config file:
-- Edit config.properties at repo root (N, L, M, rc, r/rMin-rMax, periodic, seed, outputBase, frames, dt, vmax, compareBrute)
+## Configuración
+- Edita `config.properties` en la raíz del repo para definir N, L, M, rc, r/rMin-rMax, periodic, seed, outputBase, frames, dt, vmax, compareBrute, etc.
 
-----------------------------------------------------------------
-Build the simulator (creates simulacion/cim.jar)
-----------------------------------------------------------------
-chmod +x simulacion/build.sh
-./simulacion/build.sh
 
-----------------------------------------------------------------
-Run the simulator (reads config.properties by default)
-----------------------------------------------------------------
-java -jar simulacion/cim.jar
-# or pass another .properties file:
-java -jar simulacion/cim.jar path/to/other.properties
+## Compilar y correr todo (flujo recomendado)
 
-# Outputs are written to: out/<outputBase>/
-# - particles.csv / neighbours.txt (last frame)
-# - particles_t####.csv / neighbours_t####.txt (all frames)
-# - metrics.csv (timings and comparisons)
+### Opción rápida: todo en un solo comando
+```sh
+make all
+```
+Esto compila, corre la simulación, analiza benchmarks y deja todo listo para graficar vecinos o animar.
 
-----------------------------------------------------------------
-Plot neighbors for a single snapshot
-----------------------------------------------------------------
-# Basic usage (two args):
-python analisis/plot_neighbors.py <outputBase> <particleId>
-# Example:
-python analisis/plot_neighbors.py run 17
+---
 
-# If you’re using the variant that reads defaults from config:
-python analisis/plot_neighbors.py                # uses outputBase from config.properties, particleId=0
-python analisis/plot_neighbors.py --out run --id 17
+### Pasos individuales (si querés control manual):
 
-----------------------------------------------------------------
-Benchmark vs M and N (prints timing table)
-----------------------------------------------------------------
-python analisis/analyze.py
+1. **Compilar el simulador:**
+   ```sh
+   make build
+   ```
+   (o manualmente: `chmod +x simulacion/build.sh && ./simulacion/build.sh`)
 
-# (Optionally edit Ns/Ms inside the script to change the sweep)
+2. **Correr la simulación:**
+   ```sh
+   make run
+   ```
+   Esto ejecuta el simulador con la configuración actual y deja los resultados en `out/<outputBase>/`.
 
-----------------------------------------------------------------
-Make an animation across frames
-----------------------------------------------------------------
-# Requires frames>1 and (optionally) vmax>0 in config.properties
-python analisis/animate_neighbors.py <outputBase> --id 17
+3. **Analizar benchmarks (vs M y N):**
+   ```sh
+   make analyze
+   ```
+   Imprime tablas y genera gráficos comparativos en `out/bench_points_summary/`.
 
-# Save to file:
-python analisis/animate_neighbors.py <outputBase> --id 17 --save out/<outputBase>/vecinos_id17.mp4
-python analisis/animate_neighbors.py <outputBase> --id 17 --save out/<outputBase>/vecinos_id17.gif
+4. **Graficar vecinos de una partícula:**
+   ```sh
+   make plot_neighbors
+   ```
+   El script pedirá el id de la partícula por consola y usará el último output generado.
+   - El gráfico dibuja todos los círculos con el radio real de cada partícula.
+   - Solo cambia el color: gris (otras), naranja (vecinas), celeste (seleccionada).
+   - Si todos los radios son iguales, todos los círculos se ven iguales.
+   - Si hay radios distintos, se advierte por consola.
 
-Notes:
-- Ensure you run the simulator first so the out/<outputBase>/ files exist.
-- For non-periodic walls set periodic=false in config.properties.
-- If your .properties file had inline comments (e.g., N=500 # ...), remove them or use the patched Main.java that strips inline comments.
+5. **Animar vecinos a lo largo de los frames:**
+   ```sh
+   make animate_neighbors
+   ```
+   (o manualmente: `python analisis/animate_neighbors.py <outputBase> --id <id> [--save out/<outputBase>/vecinos_id<id>.mp4|gif]`)
+   - Requiere que `frames > 1` en config.properties.
+
+## Notas y tips
+- Todos los comandos importantes están en el Makefile: `make build`, `make run`, `make analyze`, `make plot_neighbors`, `make animate_neighbors`.
+- Puedes editar Ns/Ms dentro de `analisis/analyze.py` para cambiar el barrido de parámetros.
+- Corre primero la simulación para que existan los archivos en `out/<outputBase>/`.
+- Para paredes no periódicas, pon `periodic=false` en config.properties.
+- Si tu archivo .properties tiene comentarios en línea (N=500 # ...), elimínalos o usa el Main.java parcheado que los ignora.

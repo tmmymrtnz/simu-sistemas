@@ -26,8 +26,6 @@ plot:
 	@echo "Graficando vecinos (neighbors)..."
 	python3 analisis/plot_neighbors.py
 
-plot-neigh: plot
-
 clean:
 	@echo "Limpiando archivos generados..."
 	rm -rf $(OUTDIR)
