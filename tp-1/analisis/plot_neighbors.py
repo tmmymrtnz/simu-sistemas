@@ -12,13 +12,12 @@ def load_neigh(path):
 def main():
     import sys
     base = pathlib.Path("out/run")
-    if not base.exists() or not (base/"particles.csv").exists() or not (base/"neighbours.txt").exists():
+    if not base.exists() or not (base/"particles_t0000.csv").exists() or not (base/"neighbours_t0000.txt").exists():
         print("No se encontró la carpeta de resultados 'out/run'. Compila y corre la simulación primero con 'make all'.")
         sys.exit(1)
-    pos  = pd.read_csv(base/"particles.csv")
-    neigh = load_neigh(base/"neighbours.txt")
+    pos  = pd.read_csv(base/"particles_t0000.csv")
+    neigh = load_neigh(base/"neighbours_t0000.txt")
 
-    # Pedir id de partícula por input interactivo, mostrando solo el rango
     ids = sorted(pos.id.unique())
     if len(ids) > 0:
         print(f"IDs de partículas disponibles: {ids[0]} a {ids[-1]}")
@@ -38,13 +37,25 @@ def main():
     p0 = pos[pos.id==particle].iloc[0]
     friends = pos[pos.id.isin(neigh[particle])]
 
-    plt.figure(figsize=(6,6))
-    plt.gca().set_aspect('equal')
+    fig, ax = plt.subplots(figsize=(6,6))
+    ax.set_aspect('equal')
     plt.title(f"Vecinos de {particle}")
-    plt.scatter(pos.x,pos.y,s=20,alpha=.3,label='otras')
-    plt.scatter(friends.x,friends.y,s=60,marker='s',label='vecinas')
-    plt.scatter([p0.x],[p0.y],s=120,marker='*',label='partícula')
-    plt.legend(); plt.xlim(0,pos.x.max()); plt.ylim(0,pos.y.max()); plt.show()
+    # Dibujar círculos para todas las partículas (solo cambia el color)
+    mask_others = ~pos.id.isin(friends.id) & (pos.id != p0.id)
+    for _, row in pos[mask_others].iterrows():
+        circ = plt.Circle((row.x, row.y), row.r, color='gray', alpha=0.7, lw=1, fill=True)
+        ax.add_patch(circ)
+    for _, row in friends[friends.id != p0.id].iterrows():
+        circ = plt.Circle((row.x, row.y), row.r, color='orange', alpha=0.7, lw=1, fill=True)
+        ax.add_patch(circ)
+    circ = plt.Circle((p0.x, p0.y), p0.r, color='deepskyblue', alpha=0.7, lw=1, fill=True)
+    ax.add_patch(circ)
+    plt.legend(handles=[
+        plt.Line2D([0], [0], marker='o', color='w', label='otras', markerfacecolor='gray', markersize=10, alpha=0.7),
+        plt.Line2D([0], [0], marker='o', color='w', label='vecinas', markerfacecolor='orange', markersize=10, alpha=0.7),
+        plt.Line2D([0], [0], marker='o', color='w', label='partícula', markerfacecolor='deepskyblue', markersize=10, alpha=0.7)
+    ])
+    plt.xlim(0,pos.x.max()); plt.ylim(0,pos.y.max()); plt.show()
 
 if __name__ == "__main__":
     main()
