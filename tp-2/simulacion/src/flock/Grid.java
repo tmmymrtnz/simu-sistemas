@@ -2,10 +2,11 @@ package flock;
 
 import java.util.*;
 
-/** Grilla de celdas para consultas de vecindad (Moore 3x3) con contorno periódico.
+/** Grilla de celdas para consultas de vecindad con contorno periódico.
  *  Soporta:
  *   - Puntuales (sin radio): umbral centro-centro R
  *   - Con radio: umbral borde-a-borde R + r_i + r_j
+ *  Rebuild + consulta en 3x3 (neighborsOf) o pasada única con semiplano (adjacency).
  */
 public class Grid {
 
@@ -18,9 +19,9 @@ public class Grid {
     public final int M;                 // celdas por lado
     public final boolean periodic;
     public final boolean useRadii;      // true => borde-a-borde (R + ri + rj)
-    public final double rMax;           // usado para criterio geométrico del M seguro
+    public final double rMax;           // para criterio geométrico del M seguro
 
-    // En vez de ArrayList<Agent>[] usamos una lista de listas para evitar el warning de arrays genéricos
+    // Usamos lista de listas para evitar arrays genéricos
     private final List<List<Agent>> cells;
 
     /** Constructor para puntuales (sin radio). Usa criterio ℓ=L/M ≥ R. */
@@ -42,7 +43,7 @@ public class Grid {
 
         this.cellSide = L / this.M;
 
-        // Inicializar M*M celdas vacías sin arrays genéricos
+        // Inicializar M*M celdas vacías
         this.cells = new ArrayList<>(M*M);
         for (int i=0; i<M*M; i++) this.cells.add(new ArrayList<>());
     }
@@ -69,16 +70,16 @@ public class Grid {
         return 0.0;
     }
 
-    /** Reubica todos los agentes en celdas. */
+    /** Reubica todos los agentes en celdas (¡llamar una vez por paso de simulación!). */
     public void rebuild(List<Agent> as){
         for (List<Agent> l : cells) l.clear();
         for (Agent a : as) cells.get(flat(cidx(a.x), cidx(a.y))).add(a);
     }
 
-    /** Vecinos de 'a' dentro del umbral:
+    /** Consulta local: vecinos de 'a' dentro del umbral mirando sólo 3x3 celdas.
      *   - Puntuales:     dist(a,b) ≤ R
      *   - Con radio:     dist(a,b) ≤ R + r_a + r_b   (borde-a-borde)
-     *  Recorre 9 celdas (Moore). includeSelf: si true, puede incluir a 'a' en la lista (Vicsek).
+     *  includeSelf: si true, puede incluir a 'a' (útil en Vicsek).
      */
     public List<Agent> neighborsOf(Agent a, boolean includeSelf){
         int cx = cidx(a.x), cy = cidx(a.y);
@@ -105,12 +106,77 @@ public class Grid {
 
                 for (Agent b : B){
                     if (!includeSelf && a.id == b.id) continue;
-
-                    double thr = useRadii ? (R + ra + radiusOf(b)) : R; // borde-a-borde o puntual
+                    double thr = useRadii ? (R + ra + radiusOf(b)) : R;
                     if (dist2(a, b) <= thr*thr) res.add(b);
                 }
             }
         }
         return res;
+    }
+
+    /** Pasada única “CIM clásico” con semiplano (self, E, NE, N, NW).
+     *  Devuelve mapa id -> lista de vecinos (listas mutuas, sin doble conteo).
+     *  Más eficiente cuando necesitás la vecindad de TODOS en cada paso.
+     */
+    public Map<Integer, List<Agent>> adjacency(boolean includeSelf){
+        Map<Integer, List<Agent>> adj = new HashMap<>();
+        // pre-crear listas
+        for (List<Agent> cell : cells) {
+            for (Agent a : cell) adj.put(a.id, new ArrayList<>());
+        }
+        // offsets del semiplano
+        final int[][] OFF = { {0,0}, {1,0}, {1,1}, {0,1}, {-1,1} };
+
+        for (int cy=0; cy<M; cy++){
+            for (int cx=0; cx<M; cx++){
+                List<Agent> A = cells.get(flat(cx,cy));
+                if (A.isEmpty()) continue;
+
+                for (int[] d : OFF){
+                    int nx = cx + d[0], ny = cy + d[1];
+                    if (periodic){
+                        nx = (nx + M) % M; ny = (ny + M) % M;
+                    } else {
+                        if (nx<0 || ny<0 || nx>=M || ny>=M) continue;
+                    }
+                    int fid = flat(nx, ny);
+
+                    // Si el vecino “envuelve” a la misma celda (p.ej. M=1), evitamos duplicar:
+                    if (fid == flat(cx,cy) && !(d[0]==0 && d[1]==0)) continue;
+
+                    List<Agent> B = cells.get(fid);
+                    if (B.isEmpty()) continue;
+
+                    if (d[0]==0 && d[1]==0){
+                        // pares internos de la misma celda
+                        for (int i=0;i<A.size();i++){
+                            Agent a = A.get(i);
+                            if (includeSelf) adj.get(a.id).add(a);
+                            for (int j=i+1;j<A.size();j++){
+                                Agent b = A.get(j);
+                                double thr = useRadii ? (R + radiusOf(a) + radiusOf(b)) : R;
+                                if (dist2(a,b) <= thr*thr){
+                                    adj.get(a.id).add(b);
+                                    adj.get(b.id).add(a);
+                                }
+                            }
+                        }
+                    } else {
+                        // pares entre A y B (semiplano)
+                        for (Agent a : A){
+                            double ra = useRadii ? radiusOf(a) : 0.0;
+                            for (Agent b : B){
+                                double thr = useRadii ? (R + ra + radiusOf(b)) : R;
+                                if (dist2(a,b) <= thr*thr){
+                                    adj.get(a.id).add(b);
+                                    adj.get(b.id).add(a);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return adj;
     }
 }

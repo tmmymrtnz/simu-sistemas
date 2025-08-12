@@ -104,3 +104,61 @@ Notas
 - La animación lee archivos de texto generados por la simulación, así que su velocidad es independiente de la simulación (requisito de la consigna).
 - El motor de vecindad usa una grilla de celdas M×M y contorno periódico. Si no indicás M, se selecciona automáticamente M = floor(L/R).
 - Si querés experimentar con partículas con radio (borde-a-borde), Agent y Grid ya tienen soporte, pero el Main por defecto usa puntuales (centro-centro).
+
+
+CÓMO CORRER (TP-2 – Bandadas de agentes autopropulsados)
+
+[PREVIO] Compilar
+./simulacion/build.sh
+
+Configuración
+Editar simulacion/flock.properties (parámetros clave: rule=vicsek|voter, N, L, R, v0, dt, steps, eta, periodic, outputBase, M opcional).
+
+a) Animaciones (vectores con origen en la posición)
+
+Correr una simulación (ejemplo Vicsek):
+java -jar simulacion/flocking.jar simulacion/flock.properties
+
+Animación básica (puntos + flecha corta):
+./analisis/animate.py <outBase> --dot-size 90 --arrow-len 0.3 --save video.mp4
+
+Animación coloreada por ángulo:
+./analisis/animate.py <outBase> --color-by-angle --dot-size 90 --arrow-len 0.3 --save video_color.mp4
+
+Voter: cambiar rule=voter y outputBase en .properties, volver a correr la simulación y animar:
+java -jar simulacion/flocking.jar simulacion/flock.properties
+./analisis/animate.py <outBase_voter> --dot-size 90 --arrow-len 0.3 --save voter.mp4
+./analisis/animate.py <outBase_voter> --color-by-angle --dot-size 90 --arrow-len 0.3 --save voter_color.mp4
+
+b) Evolución temporal del observable (polarización va(t))
+Muestra va(t) y promedia en ventana estacionaria (por ej., último 50%):
+./analisis/plot_observables.py <outBase> --discard 0.5
+(usar <outBase_voter> para la regla voter si se desea)
+
+c) Curvas Input vs Observable (⟨va⟩ con barras de error)
+c1) ⟨va⟩ vs η a densidad fija ρ (N=ρL^2):
+./analisis/sweep_eta.py --L 20 --rho 1.0 --R 1.0 --etas 0 0.1 0.2 0.3 0.4 0.5 --steps 800 --reps 5 --rule vicsek --cleanup
+Resultados: out/sweep_eta_summary/
+c2) ⟨va⟩ vs ρ con N fijo (varía L=√(N/ρ)):
+./analisis/sweep_rho_fixN.py --N 1000 --rhos 0.2 0.5 1.0 2.0 --eta 0.2 --R 1.0 --steps 800 --reps 5 --rule vicsek --cleanup
+Resultados: out/sweep_rho_fixN_summary/
+
+d) Interacción tipo Voter (repetir c) con voter)
+Barrido en η (ρ fija):
+./analisis/sweep_eta.py --L 20 --rho 1.0 --R 1.0 --etas 0 0.1 0.2 0.3 0.4 0.5 --steps 800 --reps 5 --rule voter --cleanup
+Barrido en ρ (N fijo):
+./analisis/sweep_rho_fixN.py --N 1000 --rhos 0.2 0.5 1.0 2.0 --eta 0.2 --R 1.0 --steps 800 --reps 5 --rule voter --cleanup
+
+e) (Opcional) Tiempo a consenso (umbral va ≥ 0.95, una corrida)
+python - <<'PY'
+import pandas as pd
+obs = pd.read_csv('out/<outBase>/observables.csv')
+thr=0.95
+r=obs.loc[obs['va']>=thr]
+print("t_consenso =", int(r['t'].iloc[0]) if len(r) else "no alcanzado")
+PY
+
+Notas
+– <outBase> es el nombre de carpeta que definiste en outputBase dentro de simulacion/flock.properties.
+– Si “ffmpeg no encontrado” al guardar MP4, usá --save *.gif o instalá ffmpeg (macOS: brew install ffmpeg).
+– Flags útiles en animate.py: --no-dots (solo flechas), --no-arrows (solo puntos), --arrow-width para ajustar grosor de flecha.

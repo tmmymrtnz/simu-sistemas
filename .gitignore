@@ -37,3 +37,9 @@ Thumbs.db
 *.swp
 *.swo
 *~
+
+# --- Archivos de video ---
+*.mp4
+*.avi
+*.mov
+*.mkv
