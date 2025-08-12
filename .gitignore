@@ -1,0 +1,39 @@
+# --- Java ---
+*.class
+*.jar
+*.war
+*.ear
+simulacion/target/
+simulacion/flocking.jar
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.ipynb_checkpoints/
+
+# Virtual envs
+.venv/
+venv/
+env/
+ENV/
+
+# --- Outputs / resultados ---
+out/
+*/out/
+**/out/
+
+# --- SO / Editores ---
+.DS_Store
+Thumbs.db
+*.log
+.vscode/
+.idea/
+
+# --- Temporales comunes ---
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
