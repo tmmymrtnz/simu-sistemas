@@ -31,6 +31,12 @@ clean:
 	rm -rf $(OUTDIR)
 	cd simulacion && rm -f cim/*.class cim.jar
 
+log-log:
+	@echo "Graficando log-log..."
+	python3 analisis/pendientes_loglog.py
+	python3 analisis/plot_loglog_brute.py
+
+
 # Ayuda
 help:
 	@echo "Comandos disponibles:"

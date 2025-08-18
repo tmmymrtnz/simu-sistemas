@@ -95,4 +95,23 @@ public class CellIndexMethod {
         }
         return res;
     }
+
+
+    public Map<Integer, List<Integer>> brute_force(List<Particle> ps) {
+        Map<Integer, List<Integer>> neighboursMap = new HashMap<>();
+        for (int i=0; i< ps.size(); i++){
+            List<Integer> neighbours = new ArrayList<>();
+            for (int j=0; j< ps.size(); j++){
+                if(i==j)
+                    continue;
+                double dist = Particle.dist2(ps.get(i), ps.get(j), L, periodic);
+                double thr = useRadii ? (rc + ps.get(i).r + ps.get(j).r) : rc;
+                if (thr * thr >= dist) {
+                    neighbours.add(ps.get(j).id);
+                }
+            }
+            neighboursMap.put(ps.get(i).id, neighbours);
+        }
+        return neighboursMap;
+    }
 }

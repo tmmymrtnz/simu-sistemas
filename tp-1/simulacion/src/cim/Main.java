@@ -80,7 +80,7 @@ public class Main {
 
         // métrica por frame
         List<String> metrics = new ArrayList<>();
-        metrics.add("frame,method,ms,comparisons,neighbors_total");
+        metrics.add("frame,method,ms,comparisons,neighbors_total,dtBruteForce_ms");
 
         int frames = Integer.parseInt(P.getProperty("frames","1"));
         double dt  = Double.parseDouble(P.getProperty("dt","0.1"));
@@ -91,16 +91,31 @@ public class Main {
             Map<Integer, Set<Integer>> neigh = cim.neighbours(ps);
             long dtCim = System.nanoTime() - t0;
 
+            long t1 = System.nanoTime();
+            Map<Integer, List<Integer>> bruteForceNeigh = cim.brute_force(ps);
+            long dtBruteForce = System.nanoTime() - t1;
+
             long neighborsTotal = neigh.values().stream().mapToLong(Set::size).sum();
 
             metrics.add(String.format(java.util.Locale.US,
-                "%d,CIM,%.3f,%d,%d", f, dtCim/1e6, cim.comparisons, neighborsTotal));
+                "%d,CIM,%.3f,%d,%d,%.3f", f, dtCim/1e6, cim.comparisons, neighborsTotal, dtBruteForce/1e6));
 
+            checkNeighbours(neigh, bruteForceNeigh);
             String tag = String.format("t%04d", f);
             writeParticles(dir.resolve("particles_"+tag+".csv"), ps);
             writeNeighbours(dir.resolve("neighbours_"+tag+".txt"), neigh);
 
+            
             if (f < frames-1) step(ps, L, dt, periodic);
+        }
+        
+
+        int [] Ns = {100, 500, 1000,2500, 5000, 7500,10000};
+        for (int n : Ns) {
+            for (int i=0; i<10; i++) {
+                System.out.println("Probando con N=" + n);
+                testTimes(n, L, M, rc, periodic, useRadii, seed, rFixed, rMin, rMax);
+            }
         }
 
         String last = String.format("t%04d", frames-1);
@@ -150,4 +165,65 @@ public class Main {
             }
         }
     }
+    private static void checkNeighbours(
+        Map<Integer, Set<Integer>> neigh, Map<Integer, List<Integer>> bruteForceNeigh) {
+        for (var e : neigh.entrySet()) {
+            int id = e.getKey();
+            Set<Integer> n1 = e.getValue();
+            List<Integer> n2 = bruteForceNeigh.get(id);
+            if (n2 == null || n2.size() != n1.size() || !n1.containsAll(n2)) {
+                System.out.printf("❌ Inconsistencia para %d: CIM=%s | BF=%s%n", id, n1, n2);
+            }
+        }
+    }
+
+    private static void testTimes(int N, double L, int M, double rc, boolean periodic, boolean useRadii, long seed, double rFixed, double rMin, double rMax) {
+
+        Random rnd = (seed >= 0) ? new Random(seed) : new Random();
+        boolean hasRange = rMin != rMax;
+        CellIndexMethod cim = new CellIndexMethod(L, rc, M, periodic, useRadii);
+        List<Particle> ps = new ArrayList<>(N);
+        for (int id = 0; id < N; id++) {
+            double r = useRadii ? (hasRange ? (rMin + rnd.nextDouble()*(rMax - rMin)) : rFixed) : 0.0;
+            double x, y; int tries=0; boolean ok;
+            do {
+                x = rnd.nextDouble()*L; y = rnd.nextDouble()*L; ok=true;
+                if (useRadii) {
+                    for (Particle p : ps) {
+                        double dx = x - p.x, dy = y - p.y;
+                        if (periodic) {
+                            if (dx > 0.5*L) dx -= L; if (dx < -0.5*L) dx += L;
+                            if (dy > 0.5*L) dy -= L; if (dy < -0.5*L) dy += L;
+                        }
+                        double minD = (r + p.r);
+                        if (dx*dx + dy*dy < (minD*minD)) { ok=false; break; }
+                    }
+                }
+            } while (!ok && ++tries < 2000);
+            Particle np = new Particle(id,x,y,r);
+            ps.add(np);
+
+        }
+        
+        long t0 = System.nanoTime();
+        Map<Integer, Set<Integer>> neigh = cim.neighbours(ps);
+        long dtCim = System.nanoTime() - t0;
+
+        long t1 = System.nanoTime();
+        Map<Integer, List<Integer>> bruteForceNeigh = cim.brute_force(ps);
+        long dtBruteForce = System.nanoTime() - t1;
+
+        checkNeighbours(neigh, bruteForceNeigh);
+
+        // agregalo en results.csv sin pisar lo ya escrito
+        try (BufferedWriter writer = Files.newBufferedWriter(Paths.get("results.csv"), StandardOpenOption.APPEND)) {
+            writer.write(String.format(" %d, %d, %d\n",dtBruteForce, dtCim, N));
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
 }
+
+
+    

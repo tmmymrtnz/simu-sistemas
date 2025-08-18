@@ -1,2 +1,2 @@
-frame,method,ms,comparisons,neighbors_total
-0,CIM,3.452,11132,4064
+frame,method,ms,comparisons,neighbors_total,dtBruteForce_ms
+0,CIM,10.054,6520,4064,16.650
