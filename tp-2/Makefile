@@ -3,7 +3,8 @@
 # Variables
 JAR=simulacion/flocking.jar
 SRC=simulacion/src/flock
-ANALYZE=analisis/animate.py ejemplo_vicsek --fps 25 
+ANALYZE=analisis/animate.py ejemplo --fps 25  #default for all
+ANALYZE_ANGLECOLOR=analisis/animate.py ejemplo --fps 25 --color-by-angle
 OUTDIR=out
 
 .PHONY: all build run analyze clean
@@ -21,6 +22,10 @@ run:
 analyze:
 	@echo "Ejecutando análisis Python..."
 	python3 $(ANALYZE)
+
+analyze_anglecolor:
+	@echo "Ejecutando análisis Python..."
+	python3 $(ANALYZE_ANGLECOLOR)
 
 plot:
 	@echo "Graficando vecinos (neighbors)..."
