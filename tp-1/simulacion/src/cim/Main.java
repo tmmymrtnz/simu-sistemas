@@ -108,13 +108,32 @@ public class Main {
             
             if (f < frames-1) step(ps, L, dt, periodic);
         }
-        
+        // quiero que si el archivo results.csv exista que lo borre y escriba un header
 
-        int [] Ns = {100, 500, 1000,2500, 5000, 7500,10000};
+        Path resultsPath = Paths.get("results.csv");
+        if (Files.exists(resultsPath)) {
+            try {
+                Files.delete(resultsPath);
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+
+        try (BufferedWriter writer = Files.newBufferedWriter(resultsPath)) {
+            writer.write("Brute Force(ns),CIM (ns),dif,N \n");
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+        int [] Ns = {100, 1000, 2500, 5000, 7500, 10000};
+        double rho0 = 100/ (20.0 * 20.0);
         for (int n : Ns) {
+            double Lscaled = Math.sqrt(n / rho0);
+            int Mscaled = (int) Math.floor(Lscaled / (rc+2*rFixed));
+
             for (int i=0; i<10; i++) {
-                System.out.println("Probando con N=" + n);
-                testTimes(n, L, M, rc, periodic, useRadii, seed, rFixed, rMin, rMax);
+                System.out.println("Probando con N=" + n + ", L=" + Lscaled + ", M=" + Mscaled);
+                testTimes(n, Lscaled, Mscaled, rc, periodic, useRadii, seed, rFixed, rMin, rMax);
             }
         }
 
@@ -213,11 +232,11 @@ public class Main {
         Map<Integer, List<Integer>> bruteForceNeigh = cim.brute_force(ps);
         long dtBruteForce = System.nanoTime() - t1;
 
-        checkNeighbours(neigh, bruteForceNeigh);
 
-        // agregalo en results.csv sin pisar lo ya escrito
+        checkNeighbours(neigh, bruteForceNeigh);
+        
         try (BufferedWriter writer = Files.newBufferedWriter(Paths.get("results.csv"), StandardOpenOption.APPEND)) {
-            writer.write(String.format(" %d, %d, %d\n",dtBruteForce, dtCim, N));
+            writer.write(String.format(" %d, %d, %d, %d\n",dtBruteForce, dtCim, dtBruteForce/dtCim,N));
         } catch (IOException e) {
             e.printStackTrace();
         }
