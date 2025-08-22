@@ -6,6 +6,7 @@ SRC=simulacion/src/flock
 ANALYZE=analisis/animate.py ejemplo --fps 25  #default for all
 ANALYZE_ANGLECOLOR=analisis/animate.py ejemplo --fps 25 --color-by-angle
 OUTDIR=out
+OBSERVABLES=analisis/plot_observables.py ejemplo --discard 0.5
 
 .PHONY: all build run analyze clean
 
@@ -29,9 +30,5 @@ analyze_anglecolor:
 
 plot:
 	@echo "Graficando vecinos (neighbors)..."
-	python3 analisis/plot_observables.py
-
-clean:
-	@echo "Limpiando archivos generados..."
-	rm -rf $(OUTDIR)
+	python3 $(OBSERVABLES)
 	cd simulacion && rm -f flock/*.class flocking.jar
