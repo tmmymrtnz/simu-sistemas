@@ -125,7 +125,7 @@ public class Main {
             e.printStackTrace();
         }
 
-        int [] Ns = {100, 1000, 2500, 5000, 7500, 10000};
+        int [] Ns = {5000, 7500, 10000, 12500, 15000, 17500};
         double rho0 = 100/ (20.0 * 20.0);
         for (int n : Ns) {
             double Lscaled = Math.sqrt(n / rho0);
