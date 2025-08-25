@@ -137,17 +137,17 @@ Muestra va(t) y promedia en ventana estacionaria (por ej., último 50%):
 
 c) Curvas Input vs Observable (⟨va⟩ con barras de error)
 c1) ⟨va⟩ vs η a densidad fija ρ (N=ρL^2):
-./analisis/sweep_eta.py --L 20 --rho 1.0 --R 1.0 --etas 0 0.1 0.2 0.3 0.4 0.5 --steps 800 --reps 5 --rule vicsek --cleanup
+./analisis/sweep_eta.py --L 20 --rho 1.0 --R 1.0 --etas 0 1.0 2.0 3.0 4.0 5.0 --steps 800 --reps 10 --rule vicsek --cleanup
 Resultados: out/sweep_eta_summary/
 c2) ⟨va⟩ vs ρ con N fijo (varía L=√(N/ρ)):
-./analisis/sweep_rho_fixN.py --N 1000 --rhos 0.2 0.5 1.0 2.0 --eta 0.2 --R 1.0 --steps 800 --reps 5 --rule vicsek --cleanup
+./analisis/sweep_rho_fixN.py --N 1000 --rhos  0.2 2.0 4.0 6.0 8.0 10.0 --eta 0.2 --R 1.0 --steps 800 --reps 10 --rule vicsek --cleanup
 Resultados: out/sweep_rho_fixN_summary/
 
-d) Interacción tipo Voter (repetir c) con voter)
+d) Interacción tipo Voter (repetir c) con voter
 Barrido en η (ρ fija):
-./analisis/sweep_eta.py --L 20 --rho 1.0 --R 1.0 --etas 0 0.1 0.2 0.3 0.4 0.5 --steps 800 --reps 5 --rule voter --cleanup
+./analisis/sweep_eta.py --L 20 --rho 1.0 --R 1.0 --etas 0 1.0 2.0 3.0 4.0 5.0 --steps 800 --reps 10 --rule voter --cleanup
 Barrido en ρ (N fijo):
-./analisis/sweep_rho_fixN.py --N 1000 --rhos 0.2 0.5 1.0 2.0 --eta 0.2 --R 1.0 --steps 800 --reps 5 --rule voter --cleanup
+./analisis/sweep_rho_fixN.py --N 1000 --rhos 0.2 2.0 4.0 6.0 8.0 10.0 --eta 0.2 --R 1.0 --steps 800 --reps 10 --rule voter --cleanup
 
 e) (Opcional) Tiempo a consenso (umbral va ≥ 0.95, una corrida)
 python - <<'PY'

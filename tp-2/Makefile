@@ -7,8 +7,8 @@ ANALYZE=analisis/animate.py ejemplo --fps 25  #default for all
 ANALYZE_ANGLECOLOR=analisis/animate.py ejemplo --fps 25 --color-by-angle
 OUTDIR=out
 PLOT=analisis/plot_observables.py ejemplo
-SWEEP_ETA=analisis/sweep_eta.py --L 20 --rho 1.0 --R 1.0 --etas 0 0.1 0.2 0.3 0.4 0.5 --steps 800 --reps 5 --rule vicsek --cleanup
-SWEEP_RHO=analisis/sweep_rho_fixN.py --N 1000 --rhos 0.2 0.5 1.0 2.0 --eta 0.2 --R 1.0 --steps 800 --reps 5 --rule vicsek --cleanup
+SWEEP_ETA=analisis/sweep_eta.py --L 31.6 --rho 1.0 --R 1.0 --etas 0 1 2 3 4 5 --steps 800 --reps 10 --rule vicsek --cleanup
+SWEEP_RHO=analisis/sweep_rho_fixN.py --N 1000 --rhos 0.2 2 4 6 8 10 --eta 0.2 --R 1.0 --steps 800 --reps 10 --rule vicsek --cleanup
 
 
 .PHONY: all build run analyze clean
