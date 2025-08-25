@@ -12,9 +12,9 @@ import json
 
 JAR = pathlib.Path(__file__).resolve().parents[1]/"simulacion/flocking.jar"
 
-def run_java(props: dict, base="sweep_eta"):
+def run_java(props: dict, eta, base="sweep_eta"):
     props = props.copy()
-    props.setdefault("outputBase", base + f"_{int(time.time()*1e6)%1_000_000}")
+    props.setdefault("outputBase", f"{base}_{eta}")
     with tempfile.NamedTemporaryFile("w+", suffix=".properties", delete=False) as tf:
         for k,v in props.items(): tf.write(f"{k}={v}\n")
         tf.flush()
@@ -44,16 +44,18 @@ def run_simulations(args):
     rows = []
     print("Running simulations...")
     for eta in args.etas:
-        for rep in range(args.reps):
-            out = run_java(dict(N=N, L=args.L, R=args.R, v0=args.v0, dt=args.dt,
-                                steps=args.steps, eta=eta, rule=args.rule,
-                                periodic=True, seed=10_000+rep))
-            created.append(out)
-            # Pass the discard time to the function
-            m, s = read_va_mean(out, args.discard_time)
-            rows.append((eta, rep, m, s, out.name))
+        out = run_java(
+            dict(N=N, L=args.L, R=args.R, v0=args.v0, dt=args.dt,
+                steps=args.steps, eta=eta, rule=args.rule,
+                periodic=True, seed=10_000 + int(eta)),
+            eta
+        )
+        created.append(out)
+        # Pass the discard time to the function
+        m, s = read_va_mean(out, args.discard_time)
+        rows.append((eta, m, s, out.name))
             
-    df = pd.DataFrame(rows, columns=["eta", "rep", "va_mean", "va_std", "run"])
+    df = pd.DataFrame(rows, columns=["eta", "va_mean", "va_std", "run"])
     g = df.groupby("eta")["va_mean"]
     summary = pd.DataFrame({"mean": g.mean(), "std": g.std(), "n": g.count()})
     summary["sem"] = summary["std"] / np.sqrt(summary["n"])
@@ -70,38 +72,108 @@ def run_simulations(args):
     print("\nSimulations finished.")
     print(f"Data saved to: {out_dir/'raw_runs.csv'} and {out_dir/'summary.csv'}")
 
-    if args.cleanup:
-        for d in created:
-            try:
-                shutil.rmtree(d)
-            except Exception:
-                pass
-        print(f"Cleanup: removed {len(created)} directories from out/")
+
+# ...existing code...
 
 def plot_data(args):
-    out_dir = pathlib.Path("out") / "sweep_eta_summary"
-    if not out_dir.exists():
-        print("Error: No data found. Please run the simulations first.")
+    """
+    Para cada corrida sweep_eta_{eta}, grafica va(t), pide cutoff y calcula el promedio estacionario.
+    Luego grafica <va> vs eta.
+    """
+    base = pathlib.Path("out")
+    runs = sorted(base.glob("sweep_eta_*"))
+    if not runs:
+        print("No se encontraron carpetas sweep_eta_* en out/")
         return
 
-    try:
-        summary = pd.read_csv(out_dir / "summary.csv", index_col="eta")
-        with open(out_dir / "args.json", "r") as f:
-            saved_args = json.load(f)
-    except FileNotFoundError:
-        print("Error: Data files not found. Please run the simulations first.")
-        return
+    results = []
+    for run in runs:
+        try:
+            obs = pd.read_csv(run/"observables.csv")
+            eta = float(run.name.split("_")[-1])
+        except Exception as e:
+            print(f"Error leyendo {run}: {e}")
+            continue
 
-    print("\nLoading data and plotting...")
-    print("\nResumen ⟨va⟩ vs η:\n", summary)
+        plt.figure(figsize=(7,4))
+        plt.plot(obs["t"], obs["va"], lw=1.5, label="va(t)")
+        plt.xlabel("t"); plt.ylabel("va")
+        plt.title(f"va(t) — {run.name}")
+        plt.tight_layout()
+        plt.show(block=False)
+
+        max_time = obs["t"].max()
+        while True:
+            try:
+                user_input = input(f"[{run.name}] Ingrese t de corte para promedio estacionario (ej: {max_time*0.5:.2f}), Enter para no descartar: ")
+                if user_input == "":
+                    discard_time = 0.0
+                    break
+                discard_time = float(user_input)
+                if discard_time >= 0:
+                    break
+                else:
+                    print("Ingrese un valor no negativo.")
+            except ValueError:
+                print("Ingrese un número válido.")
+
+        if discard_time > 0:
+            cut = obs[obs["t"] >= discard_time].index[0]
+        else:
+            cut = 0
+        sta = obs.iloc[cut:]
+        va_mean, va_std = sta["va"].mean(), sta["va"].std()
+        print(f"  Ventana estacionaria: t∈[{obs['t'].iloc[cut]:.2f},{obs['t'].iloc[-1]:.2f}]  |  ⟨va⟩={va_mean:.4f}  σ={va_std:.4f}")
+        results.append((eta, va_mean, va_std, discard_time))
+
+        plt.close()  # Cierra el gráfico anterior
+
+    # Ordena por eta
+    results.sort()
+    etas = [r[0] for r in results]
+    va_means = [r[1] for r in results]
+    va_stds = [r[2] for r in results]
 
     plt.figure()
-    plt.errorbar(summary.index, summary["mean"], yerr=summary["sem"], marker='o')
+    plt.errorbar(etas, va_means, yerr=va_stds, marker='o')
     plt.xlabel("η")
-    plt.ylabel("⟨va⟩")
-    plt.title(f"{saved_args['rule'].capitalize()}: ⟨va⟩ vs η  |  ρ={saved_args['rho']}, L={saved_args['L']}, R={saved_args['R']}")
+    plt.ylabel("⟨va⟩ (estacionario)")
+    plt.title("⟨va⟩ vs η (ventanas estacionarias elegidas manualmente)")
     plt.tight_layout()
     plt.show()
+
+
+
+
+
+def plot_all_va_vs_time(out_dir="out"):
+    """
+    Grafica va(t) para cada corrida sweep_eta_{eta} en la carpeta out/
+    """
+    base = pathlib.Path(out_dir)
+    runs = sorted(base.glob("sweep_eta_*"))
+    if not runs:
+        print("No se encontraron carpetas sweep_eta_* en", out_dir)
+        return
+
+    plt.figure(figsize=(8,5))
+    for run in runs:
+        try:
+            obs = pd.read_csv(run/"observables.csv")
+            eta = run.name.split("_")[-1]
+            plt.plot(obs["t"], obs["va"], label=f"η={eta}")
+        except Exception as e:
+            print(f"Error leyendo {run}: {e}")
+
+    plt.xlabel("t")
+    plt.ylabel("va")
+    plt.title("va(t) para distintas η")
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
+
+
+
 
 def main():
     ap = argparse.ArgumentParser(description="Sweep eta and plot ⟨va⟩ vs η.")
@@ -112,7 +184,6 @@ def main():
     ap.add_argument("--dt", type=float, default=1.0)
     ap.add_argument("--steps", type=int, default=800)
     ap.add_argument("--etas", type=float, nargs="+", default=[0.0, 0.1, 0.2, 0.3, 0.4, 0.5])
-    ap.add_argument("--reps", type=int, default=5)
     ap.add_argument("--rule", choices=["vicsek", "voter"], default="vicsek")
     ap.add_argument("--discard-time", type=float, default=0.0, help="time (in seconds) to discard from the beginning of each run")
     ap.add_argument("--cleanup", action="store_true", help="delete generated runs at the end")
