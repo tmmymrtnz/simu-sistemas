@@ -6,7 +6,10 @@ SRC=simulacion/src/flock
 ANALYZE=analisis/animate.py ejemplo --fps 25  #default for all
 ANALYZE_ANGLECOLOR=analisis/animate.py ejemplo --fps 25 --color-by-angle
 OUTDIR=out
-OBSERVABLES=analisis/plot_observables.py ejemplo --discard 0.5
+PLOT=analisis/plot_observables.py ejemplo
+SWEEP_ETA=analisis/sweep_eta.py --L 20 --rho 1.0 --R 1.0 --etas 0 0.1 0.2 0.3 0.4 0.5 --steps 800 --reps 5 --rule vicsek --cleanup
+SWEEP_RHO=analisis/sweep_rho_fixN.py --N 1000 --rhos 0.2 0.5 1.0 2.0 --eta 0.2 --R 1.0 --steps 800 --reps 5 --rule vicsek --cleanup
+
 
 .PHONY: all build run analyze clean
 
@@ -30,5 +33,17 @@ analyze_anglecolor:
 
 plot:
 	@echo "Graficando vecinos (neighbors)..."
-	python3 $(OBSERVABLES)
+	python3 $(PLOT)
 	cd simulacion && rm -f flock/*.class flocking.jar
+
+sweep_eta:
+	@echo "Ejecutando barrido de eta..."
+	python3 $(SWEEP_ETA)
+
+sweep_rho:
+	@echo "Ejecutando barrido de rho..."
+	python3 $(SWEEP_RHO)
+
+clean:
+	@echo "Limpiando archivos generados..."
+	rm -rf $(OUTDIR)
