@@ -7,9 +7,10 @@ ANALYZE=analisis/animate.py ejemplo --fps 25  #default for all
 ANALYZE_ANGLECOLOR=analisis/animate.py ejemplo --fps 25 --color-by-angle
 OUTDIR=out
 PLOT=analisis/plot_observables.py ejemplo
-SWEEP_ETA=analisis/sweep_eta.py --L 31.6 --rho 1.0 --R 1.0 --etas 0 1 2 3 4 5 --steps 800 --reps 10 --rule vicsek --cleanup
-SWEEP_RHO=analisis/sweep_rho_fixN.py --N 1000 --rhos 0.2 2 4 6 8 10 --eta 0.2 --R 1.0 --steps 800 --reps 10 --rule vicsek --cleanup
-
+SWEEP_ETA_RUN=analisis/sweep_eta.py --run --L 31.6 --rho 1.0 --R 1.0 --etas 0 1 2 3 4 5 --steps 800 --reps 10 --rule vicsek --discard-time 700 --cleanup
+SWEEP_ETA_PLOT=analisis/sweep_eta.py --plot --L 31.6 --rho 1.0 --R 1.0 --etas 0 1 2 3 4 5 --steps 800 --reps 10 --rule vicsek  --discard-time 700 --cleanup
+SWEEP_RHO_RUN=analisis/sweep_rho_fixN.py --run --N 1000 --rhos 0.2 2 4 6 8 10 --eta 0.2 --R 1.0 --steps 800 --reps 10 --rule vicsek --cleanup
+SWEEP_RHO_PLOT=analisis/sweep_rho_fixN.py --plot --N 1000 --rhos 0.2 2 4 6 8 10 --eta 0.2 --R 1.0 --steps 800 --reps 10 --rule vicsek --cleanup
 
 .PHONY: all build run analyze clean
 
@@ -36,13 +37,19 @@ plot:
 	python3 $(PLOT)
 	cd simulacion && rm -f flock/*.class flocking.jar
 
-sweep_eta:
+sweep_eta_run:
 	@echo "Ejecutando barrido de eta..."
-	python3 $(SWEEP_ETA)
+	python3 $(SWEEP_ETA_RUN)
 
-sweep_rho:
+sweep_eta_plot:
+	python3 $(SWEEP_ETA_PLOT)
+
+sweep_rho_run:
 	@echo "Ejecutando barrido de rho..."
-	python3 $(SWEEP_RHO)
+	python3 $(SWEEP_RHO_RUN)
+	
+sweep_rho_plot:
+	python3 $(SWEEP_RHO_PLOT)
 
 clean:
 	@echo "Limpiando archivos generados..."
