@@ -12,14 +12,18 @@ import json
 
 JAR = pathlib.Path(__file__).resolve().parents[1]/"simulacion/flocking.jar"
 
-def run_java(props: dict, eta, base="sweep_eta"):
+def run_java(props: dict, eta):
     props = props.copy()
-    props.setdefault("outputBase", f"{base}_{eta}")
+    # Carpeta de salida: out/sweep_eta/sweep_eta_{eta}
+    out_dir = pathlib.Path("out") / "sweep_eta" / f"sweep_eta_{eta}"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    props["outputBase"] = str(out_dir.relative_to("out"))
     with tempfile.NamedTemporaryFile("w+", suffix=".properties", delete=False) as tf:
-        for k,v in props.items(): tf.write(f"{k}={v}\n")
+        for k, v in props.items():
+            tf.write(f"{k}={v}\n")
         tf.flush()
         subprocess.run(["java", "-jar", str(JAR), tf.name], check=True, stdout=subprocess.DEVNULL)
-    return pathlib.Path("out")/props["outputBase"]
+    return out_dir
 
 def read_va_mean(out_dir: pathlib.Path, discard_time=None):
     """
@@ -73,14 +77,13 @@ def run_simulations(args):
     print(f"Data saved to: {out_dir/'raw_runs.csv'} and {out_dir/'summary.csv'}")
 
 
-# ...existing code...
 
 def plot_data(args):
     """
     Para cada corrida sweep_eta_{eta}, grafica va(t), pide cutoff y calcula el promedio estacionario.
     Luego grafica <va> vs eta.
     """
-    base = pathlib.Path("out")
+    base = pathlib.Path("out") / "sweep_eta"
     runs = sorted(base.glob("sweep_eta_*"))
     if not runs:
         print("No se encontraron carpetas sweep_eta_* en out/")
@@ -134,6 +137,14 @@ def plot_data(args):
     va_means = [r[1] for r in results]
     va_stds = [r[2] for r in results]
 
+    df = pd.DataFrame({
+        "eta": etas,
+        "va_mean": va_means,
+        "va_std": va_stds,
+        "discard_time": [r[3] for r in results]
+    })
+    df.to_csv("out/sweep_eta/sweep_eta_results.csv", index=False)
+
     plt.figure()
     plt.errorbar(etas, va_means, yerr=va_stds, marker='o')
     plt.xlabel("η")
@@ -143,10 +154,17 @@ def plot_data(args):
     plt.show()
 
 
+def plot_analyze(etas, va_means, va_stds):
+    plt.figure()
+    plt.errorbar(etas, va_means, yerr=va_stds, marker='o')
+    plt.xlabel("η")
+    plt.ylabel("⟨va⟩ (estacionario)")
+    plt.title("⟨va⟩ vs η (ventanas estacionarias elegidas manualmente)")
+    plt.tight_layout()
+    plt.show()
 
 
-
-def plot_all_va_vs_time(out_dir="out"):
+def plot_all_va_vs_time(out_dir="out/sweep_eta"):
     """
     Grafica va(t) para cada corrida sweep_eta_{eta} en la carpeta out/
     """
@@ -187,6 +205,7 @@ def main():
     ap.add_argument("--rule", choices=["vicsek", "voter"], default="vicsek")
     ap.add_argument("--discard-time", type=float, default=0.0, help="time (in seconds) to discard from the beginning of each run")
     ap.add_argument("--cleanup", action="store_true", help="delete generated runs at the end")
+    ap.add_argument("--analyze", action="store_true", help="Perform analysis on saved data")
     
     group = ap.add_mutually_exclusive_group()
     group.add_argument("--run", action="store_true", help="Run the simulations and save the data")
@@ -194,7 +213,7 @@ def main():
 
     args = ap.parse_args()
 
-    if not args.run and not args.plot:
+    if not args.run and not args.plot and not args.analyze:
         args.run = True
 
     if args.run:
@@ -202,6 +221,10 @@ def main():
     
     if args.plot:
         plot_data(args)
+
+    if args.analyze:
+        df = pd.read_csv("out/sweep_eta/sweep_eta_results.csv")
+        plot_analyze(df["eta"], df["va_mean"], df["va_std"])
 
 if __name__ == "__main__":
     main()
