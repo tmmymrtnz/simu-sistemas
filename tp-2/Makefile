@@ -3,13 +3,13 @@
 # Variables
 JAR=simulacion/flocking.jar
 SRC=simulacion/src/flock
-ANALYZE=analisis/animate.py ejemplo --fps 25  #default for all
-ANALYZE_ANGLECOLOR=analisis/animate.py ejemplo --fps 25 --color-by-angle
+ANALYZE=analisis/animate.py ejemplo1 --fps 25  #default for all
+ANALYZE_ANGLECOLOR=analisis/animate.py ejemplo1 --fps 25 --color-by-angle
 OUTDIR=out
 ETAOUT=out/sweep_eta
 RHOOUT=out/sweep_rho
 
-PLOT=analisis/plot_observables.py ejemplo
+PLOT=analisis/plot_observables.py ejemplo1 ejemplo2
 SWEEP_ETA_RUN=analisis/sweep_eta.py --run --L 31.6 --rho 1.0 --R 1.0 --etas 0.0 0.5 1.0 1.5 2.0 2.5 3.0 3.5 4.0 4.5 5.0 --steps 2000 --rule vicsek --discard-time 700 --cleanup
 SWEEP_ETA_PLOT=analisis/sweep_eta.py --plot --L 31.6 --rho 1.0 --R 1.0 --etas 0.0 0.5 1.0 1.5 2.0 2.5 3.0 3.5 4.0 4.5 5.0 --steps 2000  --rule vicsek  --discard-time 700 --cleanup
 SWEEP_ETA_ANALYZE=analisis/sweep_eta.py --analyze --L 31.6 --rho 1.0 --R 1.0 --etas 0.0 0.5 1.0 1.5 2.0 2.5 3.0 3.5 4.0 4.5 5.0 --steps 2000  --rule vicsek  --discard-time 700 --cleanup

@@ -64,7 +64,7 @@ def run_simulations(args):
     summary = pd.DataFrame({"mean": g.mean(), "std": g.std(), "n": g.count()})
     summary["sem"] = summary["std"] / np.sqrt(summary["n"])
 
-    out_dir = pathlib.Path("out") / "sweep_eta_summary"
+    out_dir = pathlib.Path("out") / "sweep_eta" / "sweep_eta_summary"
     out_dir.mkdir(parents=True, exist_ok=True)
     df.to_csv(out_dir / "raw_runs.csv", index=False)
     summary.to_csv(out_dir / "summary.csv")
@@ -160,6 +160,8 @@ def plot_analyze(etas, va_means, va_stds):
     plt.xlabel("η")
     plt.ylabel("⟨va⟩ (estacionario)")
     plt.title("⟨va⟩ vs η (ventanas estacionarias elegidas manualmente)")
+    # agregar una curva de mejor ajuste
+    
     plt.tight_layout()
     plt.show()
 
