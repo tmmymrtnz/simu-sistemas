@@ -9,13 +9,14 @@ def run_java(props: dict, rho):
     props = props.copy()
     out_dir = pathlib.Path("out") / "sweep_rho" / f"sweep_rho_fixN_{rho}"
     out_dir.mkdir(parents=True, exist_ok=True)
-    props["outputBase"] = str(out_dir.relative_to(pathlib.Path.cwd() / "out"))
+    props["outputBase"] = str(out_dir.relative_to("out"))  # <--- CAMBIO AQUÍ
     with tempfile.NamedTemporaryFile("w+", suffix=".properties", delete=False) as tf:
         for k, v in props.items():
             tf.write(f"{k}={v}\n")
         tf.flush()
         subprocess.run(["java", "-jar", str(JAR), tf.name], check=True, stdout=subprocess.DEVNULL)
     return out_dir
+
 
 def read_va_mean(out_dir: pathlib.Path, discard=0.5):
     obs = pd.read_csv(out_dir/"observables.csv")

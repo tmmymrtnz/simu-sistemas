@@ -35,11 +35,22 @@ public class Main {
             agents.add(new Agent(i,x,y,th,v0));
         }
 
+        
         Grid grid = new Grid(L, R, Mopt, periodic);
         UpdateRule updater = rule.equals("voter") ? new VoterUpdate() : new VicsekUpdate();
 
-        Path dir = Path.of("out", outBase);
+
+        Path dir;
+        if (outBase != null && !outBase.isEmpty()) {
+            dir = Path.of("out", outBase);
+        } else {
+            String params = String.format("N%d_L%.1f_R%.2f_eta%.2f_rule_%s", N, L, R, eta, rule);
+            String idrandom = UUID.randomUUID().toString().substring(0, 8);
+            dir = Path.of("out", "simulacion_" + params + "_" + idrandom);
+        }
+        System.out.println("Directorio de salida: " + dir.toAbsolutePath());
         Files.createDirectories(dir);
+
         IOUtil.writeStatic(dir, N,L,v0,R,eta,dt,steps,periodic,rule,seed,Mopt);
 
         Path obsFile = dir.resolve("observables.csv");
