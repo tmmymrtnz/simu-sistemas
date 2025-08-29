@@ -1,21 +1,20 @@
 import pandas as pd
 import matplotlib.pyplot as plt
 
-# Load the CSV
+# Load CSV
 df = pd.read_csv("btc_daily_price.csv")
 
-tv = list(range(1, 4650))
-
-# Parse dates
+# Parse date & price
 df["Date"] = pd.to_datetime(df["Date"], format="%m/%d/%Y")
+df["Price"] = (df["Price"].astype(str)
+               .str.replace(",", "", regex=False)
+               .astype(float))
 
-# Clean Price (remove commas, convert to float)
-df["Price"] = df["Price"].str.replace(",", "", regex=False).astype(float)
+# Ordenar y limpiar
+df = df.sort_values("Date").dropna(subset=["Price"])
+df = df[df["Price"] > 0]
 
-# Sort by date ascending
-df = df.sort_values("Date")
-
-# Convert datetime to year fraction
+# Año fraccional (eje X)
 def to_year_fraction(d):
     year = d.year
     start = pd.Timestamp(year=year, month=1, day=1)
@@ -24,13 +23,25 @@ def to_year_fraction(d):
 
 df["YearFrac"] = df["Date"].apply(to_year_fraction)
 
-# Double log plot (year vs price)
-plt.figure(figsize=(11,6))
-plt.loglog(tv, df["Price"], linewidth=0.7)
+x = df["YearFrac"].values
+y = df["Price"].values
 
-plt.xlabel("Year (log scale)")
-plt.ylabel("Bitcoin Price (USD, log scale)")
-plt.title("Bitcoin Daily Close — Double Log Plot (Years vs Price)")
-plt.grid(True, which="both", ls="--")
+# ---- Plots lado a lado ----
+fig, axes = plt.subplots(1, 2, figsize=(14,6))
+
+# Escala lineal
+axes[0].plot(x, y, linewidth=0.7)
+axes[0].set_xlabel("Year")
+axes[0].set_ylabel("Bitcoin Price (USD)")
+axes[0].set_title("Bitcoin Price (Linear Scale)")
+axes[0].grid(True, ls="--")
+
+# Escala log-log
+axes[1].loglog(x, y, linewidth=0.7)
+axes[1].set_xlabel("Year (log scale)")
+axes[1].set_ylabel("Bitcoin Price (log scale)")
+axes[1].set_title("Bitcoin Price (Log-Log Scale)")
+axes[1].grid(True, which="both", ls="--")
+
 plt.tight_layout()
 plt.show()
