@@ -30,16 +30,19 @@ public class Map{
     public List<Agent> createParticles(int qty){
         List<Agent> newParticles = new ArrayList<>();
         for (int i = 0; i < qty; i++) {
-//            double x = Math.random() * width;
-//            double y = Math.random() * height;
-//            double vx = (Math.random() - 0.5) * 2 * L_fixed;
-//            double vy = (Math.random() - 0.5) * 2 * L_fixed;
-//            newParticles.add(new Agent(i, x, y, vx, vy));
+            double x = Math.random() * (L_fixed);
+            double y = Math.random() * (L_fixed);
+            double angle = Math.random() * 2 * Math.PI;
+            double speed = 0.01; 
+            double vx = speed * Math.cos(angle);
+            double vy = speed * Math.sin(angle);
+            Agent particle = new Agent(x, y, vx, vy);
+            newParticles.add(particle);
         }
+        this.particles.addAll(newParticles);
         return newParticles;
     }
 
-    // ...existing code...
     public void printMap() {
         int size = (int) Math.round(2 * L_fixed / 0.01) + 2; // Ajusta la resolución aquí
         char[][] grid = new char[size][size];

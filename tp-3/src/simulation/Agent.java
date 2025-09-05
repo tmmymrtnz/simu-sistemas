@@ -4,10 +4,11 @@ public class Agent {
     public final int id;
     public double x, y;
     public double vx, vy;
-    public double r;           // radio (0 = puntual)
+    public double r;
+    public final double mass = 1;
 
     public Agent(int id, double x, double y, double vx, double vy){
-        this(id, x, y, vx, vy, 0.0);
+        this(id, x, y, vx, vy, 0.0015);
     }
 
     public Agent(int id, double x, double y, double vx, double vy, double r){
@@ -16,7 +17,7 @@ public class Agent {
         this.y = y;
         this.vx = vx;
         this.vy = vy;
-        this.r = Math.max(0.0, r);
+        this.r = r;
     }
 
     public double vx(){ return vx; }
