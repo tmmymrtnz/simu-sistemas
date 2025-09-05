@@ -1,0 +1,146 @@
+package simulation;
+
+import static java.lang.Math.*;
+
+public final class Collisions {
+    private static final double EPS = 1e-9;
+
+    /** t>=0 hasta colisión partícula–partícula; INF si no hay. */
+    public static double timeToParticle(Agent a, Agent b) {
+        double rx = b.x - a.x, ry = b.y - a.y;
+        double vx = b.vx - a.vx, vy = b.vy - a.vy;
+        double R  = a.r + b.r;
+
+        double A = vx*vx + vy*vy;
+        double B = 2.0*(rx*vx + ry*vy);
+        double C = rx*rx + ry*ry - R*R;
+
+        if (A < EPS) return Double.POSITIVE_INFINITY;
+        double D = B*B - 4*A*C;
+        if (D < 0) return Double.POSITIVE_INFINITY;
+
+        if ((rx*vx + ry*vy) >= 0) return Double.POSITIVE_INFINITY; // alejándose
+
+        double sqrtD = sqrt(D);
+        double t1 = (-B - sqrtD)/(2*A);
+        double t2 = (-B + sqrtD)/(2*A);
+        if (t1 >= EPS) return t1;
+        if (t2 >= EPS) return t2;
+        return Double.POSITIVE_INFINITY;
+    }
+
+    /** t>=0 hasta colisión partícula–pared (segmento); INF si no hay. */
+    public static double timeToWall(Agent a, Wall w) {
+        double ux = w.x2 - w.x1, uy = w.y2 - w.y1;
+        double L2 = ux*ux + uy*uy;
+        if (L2 < EPS) {
+            return timeToPoint(a, w.x1, w.y1);
+        }
+        // |cross((c0 + v t), u)| = r|u|
+        double c0x = a.x - w.x1, c0y = a.y - w.y1;
+        double cu0 = c0x*uy - c0y*ux;          // cross(c0,u)
+        double cv  = a.vx*uy - a.vy*ux;        // cross(v,u)
+        double rhs = a.r * sqrt(L2);
+
+        double best = Double.POSITIVE_INFINITY;
+        if (abs(cv) > EPS) {
+            double tA = ( rhs - cu0)/cv;
+            double tB = (-rhs - cu0)/cv;
+            double candA = checkWallSegmentHit(a, w, tA);
+            if (candA < best) best = candA;
+            double candB = checkWallSegmentHit(a, w, tB);
+            if (candB < best) best = candB;
+        }
+        // extremos
+        double tp1 = timeToPoint(a, w.x1, w.y1);
+        if (tp1 < best) best = tp1;
+        double tp2 = timeToPoint(a, w.x2, w.y2);
+        if (tp2 < best) best = tp2;
+
+        return best;
+    }
+
+    /** Normal unitaria pared→partícula en el instante actual (post-avance al evento). */
+    public static double[] wallImpactNormal(Agent a, Wall w) {
+        double ux = w.x2 - w.x1, uy = w.y2 - w.y1;
+        double L2 = ux*ux + uy*uy;
+        if (L2 < EPS) { // punto
+            double dx = a.x - w.x1, dy = a.y - w.y1;
+            double d = hypot(dx, dy);
+            if (d < 1e-12) return new double[]{1,0};
+            return new double[]{dx/d, dy/d};
+        }
+        // proyección del centro sobre el segmento
+        double wx = a.x - w.x1, wy = a.y - w.y1;
+        double s = (wx*ux + wy*uy)/L2;
+        s = max(0.0, min(1.0, s));
+        double px = w.x1 + s*ux, py = w.y1 + s*uy;
+        double nx = a.x - px, ny = a.y - py;
+        double d  = hypot(nx, ny);
+        if (d < 1e-12) { // perpendicular al segmento, opuesta a v
+            double nnx = -uy, nny = ux;
+            double inv = 1.0 / max(1e-12, hypot(nnx, nny));
+            nnx *= inv; nny *= inv;
+            if (a.vx*nnx + a.vy*nny >= 0) { nnx = -nnx; nny = -nny; }
+            return new double[]{nnx, nny};
+        }
+        return new double[]{nx/d, ny/d};
+    }
+
+    /** Reflejo elástico contra pared. */
+    public static void resolveParticleWall(Agent a, double nx, double ny) {
+        double vn = a.vx*nx + a.vy*ny;
+        if (vn < 0) {
+            a.vx -= 2*vn*nx;
+            a.vy -= 2*vn*ny;
+        }
+    }
+
+    /** Colisión elástica (e=1), masas iguales. */
+    public static void resolveParticleParticle(Agent a, Agent b) {
+        double dx = b.x - a.x, dy = b.y - a.y;
+        double d  = hypot(dx, dy);
+        if (d < 1e-12) return;
+        double nx = dx/d, ny = dy/d;
+        double rvx = a.vx - b.vx, rvy = a.vy - b.vy;
+        double rel = rvx*nx + rvy*ny;
+        if (rel >= 0) return;
+        double jx = -rel*nx, jy = -rel*ny;
+        a.vx += jx; a.vy += jy;
+        b.vx -= jx; b.vy -= jy;
+    }
+
+    // ---- privados ----
+    private static double checkWallSegmentHit(Agent a, Wall w, double t) {
+        if (!(t >= EPS && Double.isFinite(t))) return Double.POSITIVE_INFINITY;
+        double cx = a.x + a.vx*t, cy = a.y + a.vy*t;
+        double ux = w.x2 - w.x1,  uy = w.y2 - w.y1;
+        double L2 = ux*ux + uy*uy;
+        double wx = cx - w.x1, wy = cy - w.y1;
+        double s  = (wx*ux + wy*uy)/L2;
+        if (s < -1e-12 || s > 1.0 + 1e-12) return Double.POSITIVE_INFINITY;
+        // evitar tangencial pura
+        double nx = -uy, ny = ux;
+        double vn = a.vx*nx + a.vy*ny;
+        if (abs(vn) < 1e-14) return Double.POSITIVE_INFINITY;
+        return t;
+    }
+
+    private static double timeToPoint(Agent a, double qx, double qy) {
+        double rx = a.x - qx, ry = a.y - qy;
+        double A = a.vx*a.vx + a.vy*a.vy;
+        if (A < 1e-12) return Double.POSITIVE_INFINITY;
+        double B = 2.0*(rx*a.vx + ry*a.vy);
+        double C = rx*rx + ry*ry - a.r*a.r;
+
+        double D = B*B - 4*A*C;
+        if (D < 0) return Double.POSITIVE_INFINITY;
+        if (B >= 0) return Double.POSITIVE_INFINITY; // alejándose
+
+        double t1 = (-B - sqrt(D))/(2*A);
+        double t2 = (-B + sqrt(D))/(2*A);
+        if (t1 >= 1e-9) return t1;
+        if (t2 >= 1e-9) return t2;
+        return Double.POSITIVE_INFINITY;
+    }
+}

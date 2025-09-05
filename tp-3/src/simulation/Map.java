@@ -29,14 +29,21 @@ public class Map{
 
     public List<Agent> createParticles(int qty){
         List<Agent> newParticles = new ArrayList<>();
+        double speed = 0.01;
+        double r = 0.0015;
+
+        int baseId = this.particles.size(); // evita repetir ids si llamás varias veces
+
         for (int i = 0; i < qty; i++) {
-            double x = Math.random() * (L_fixed);
-            double y = Math.random() * (L_fixed);
+            // dentro del cuadrado [r, L_fixed - r] para no spawnear tocando pared
+            double x = Math.random() * (L_fixed - 2*r) + r;
+            double y = Math.random() * (L_fixed - 2*r) + r;
+
             double angle = Math.random() * 2 * Math.PI;
-            double speed = 0.01; 
             double vx = speed * Math.cos(angle);
             double vy = speed * Math.sin(angle);
-            Agent particle = new Agent(x, y, vx, vy);
+
+            Agent particle = new Agent(baseId + i, x, y, vx, vy, r);
             newParticles.add(particle);
         }
         this.particles.addAll(newParticles);
