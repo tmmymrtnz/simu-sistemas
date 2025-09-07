@@ -11,7 +11,7 @@ public final class TargetEventSim {
 
     private enum Kind { NONE, WALL, PARTICLE }
 
-    private static final class Next {
+    private static final class NextParticleEvent {
         Kind kind = Kind.NONE;
         int partner = -1;
         Wall wall = null;
@@ -21,34 +21,34 @@ public final class TargetEventSim {
         double bestPartDt = Double.POSITIVE_INFINITY;
     }
 
-    private static final class PQEvent implements Comparable<PQEvent> {
+    private static final class Event implements Comparable<Event> {
         double tAbs; int i; int stamp;
-        PQEvent(double tAbs, int i, int stamp){ this.tAbs=tAbs; this.i=i; this.stamp=stamp; }
-        public int compareTo(PQEvent o){ return Double.compare(this.tAbs, o.tAbs); }
+        Event(double tAbs, int i, int stamp){ this.tAbs=tAbs; this.i=i; this.stamp=stamp; }
+        public int compareTo(Event o){ return Double.compare(this.tAbs, o.tAbs); }
     }
 
     private final List<Agent> A;
     private final List<Wall>  W;
-    private final int N;
+    private final int N; //size de los agents
 
     private double T = 0.0;            // tiempo global
-    private final Next[] next;         // próximo objetivo por partícula
+    private final NextParticleEvent[] next;         // próximo objetivo por partícula
     private final int[] planStamp;     // invalida eventos viejos de i
     private final int[] stateStamp;    // si cambia estado de i (no lo usamos aquí pero queda útil)
     private final List<Set<Integer>> dependents; // quiénes tenían a j como objetivo
 
-    private final PriorityQueue<PQEvent> pq = new PriorityQueue<>();
+    private final PriorityQueue<Event> pq = new PriorityQueue<>();
 
     // verbose flag (prints a stdout)
     private boolean verbose = false;
 
     public TargetEventSim(List<Agent> agents, List<Wall> walls){
         this.A = agents; this.W = walls; this.N = agents.size();
-        this.next = new Next[N];
+        this.next = new NextParticleEvent[N];
         this.planStamp = new int[N];
         this.stateStamp = new int[N];
         this.dependents = new ArrayList<>(N);
-        for (int i=0;i<N;i++){ next[i]=new Next(); dependents.add(new HashSet<>()); }
+        for (int i=0;i<N;i++){ next[i]=new NextParticleEvent(); dependents.add(new HashSet<>()); }
     }
 
     /** Corre la simulación por eventos hasta tMax y escribe log txt. Si verbose=true, imprime a consola. */
@@ -64,12 +64,12 @@ public final class TargetEventSim {
             if (this.verbose) System.out.printf("== INIT  T=%.9f  N=%d\n", T, N);
 
             while (!pq.isEmpty() && T < tMax){
-                PQEvent ev = pq.poll();
-                if (ev.stamp != planStamp[ev.i]) continue;
-                if (ev.tAbs < T) continue;
+                Event ev = pq.poll();
+                if (ev.stamp != planStamp[ev.i]) continue; // si prendi el flag de invalido lo paso de largo  (borrado logico)
+                if (ev.tAbs < T) continue;  // si es viejo, lo ignoro (tal vez no hace falta)
 
                 double dt = ev.tAbs - T;
-                if (dt > 0) {
+                if (dt > 0) {  // avanzo todo al proximo evento
                     for (Agent a: A){ a.x += a.vx*dt; a.y += a.vy*dt; }
                     if (this.verbose)
                         System.out.printf("[advance] Δt=%.9f  from T=%.9f -> T'=%.9f (i=%d)\n",
@@ -77,7 +77,7 @@ public final class TargetEventSim {
                     T = ev.tAbs;
                 }
 
-                Next nx = next[ev.i];
+                NextParticleEvent nx = next[ev.i]; //agarro el proximo evento planeado
                 if (nx.kind == Kind.NONE || !Double.isFinite(nx.dt)) continue;
 
                 if (nx.kind == Kind.WALL) {
@@ -97,10 +97,10 @@ public final class TargetEventSim {
 
                     // replanificar i + watchers(i)
                     Set<Integer> watchers = new HashSet<>(dependents.get(ev.i));
-                    recomputeNextAndEnqueue(ev.i);
+                    recomputeNextAndEnqueue(ev.i); // para la partícula que disparó el evento
                     if (this.verbose)
                         System.out.printf("[replan]  i=%d  watchers=%d\n", ai.id, watchers.size());
-                    for (int k : watchers) recomputeNextAndEnqueue(k);
+                    for (int k : watchers) recomputeNextAndEnqueue(k); //para todas las particulas que iban a chocar conmigo
 
                 } else { // PARTICLE
                     int j = nx.partner;
@@ -124,15 +124,15 @@ public final class TargetEventSim {
                     writeEvent(out, String.format("PP i=%d j=%d", ai.id, aj.id));
 
                     // replan: i, j y watchers(i ∪ j)
-                    Set<Integer> watchersI = new HashSet<>(dependents.get(ev.i));
+                    Set<Integer> watchersI = new HashSet<>(dependents.get(ev.i)); 
                     Set<Integer> watchersJ = new HashSet<>(dependents.get(j));
-                    recomputeNextAndEnqueue(ev.i);
+                    recomputeNextAndEnqueue(ev.i); //recalculo las dos particulas
                     recomputeNextAndEnqueue(j);
                     if (this.verbose)
                         System.out.printf("[replan]  i=%d watchers=%d | j=%d watchers=%d\n",
                                 ai.id, watchersI.size(), aj.id, watchersJ.size());
-                    for (int k : watchersI) recomputeNextAndEnqueue(k);
-                    for (int k : watchersJ) if (k!=ev.i) recomputeNextAndEnqueue(k);
+                    for (int k : watchersI) recomputeNextAndEnqueue(k); //recalculo los que dependen de i 
+                    for (int k : watchersJ) if (k!=ev.i) recomputeNextAndEnqueue(k); // recalculo los que dependen de j (salteando i que ya lo hice)
                 }
 
                 writeSnapshot(out, "POST");
@@ -146,13 +146,11 @@ public final class TargetEventSim {
 
     // ---------- planificación ----------
 
-    private final PriorityQueue<PQEvent> pq = new PriorityQueue<>();
-
     private void recomputeNextAndEnqueue(int i){
         // quitar dependencia vieja
-        Next old = next[i];
+        NextParticleEvent old = next[i]; 
         if (old.kind == Kind.PARTICLE && old.partner >= 0) {
-            dependents.get(old.partner).remove(i);
+            dependents.get(old.partner).remove(i); // aviso que i ya no depende del resto, porque voy a replanificar
         }
 
         Agent ai = A.get(i);
@@ -179,7 +177,7 @@ public final class TargetEventSim {
             if (t < bestDt)     { bestDt = t; bestKind = Kind.PARTICLE; bestPartner = j; bestWall = null; }
         }
 
-        Next nx = next[i];
+        NextParticleEvent nx = next[i];
         nx.kind = bestKind; nx.partner = bestPartner; nx.wall = bestWall; nx.dt = bestDt;
         nx.bestWallDt = bestWallDt; nx.bestPartDt = bestPartDt;
 
@@ -190,7 +188,7 @@ public final class TargetEventSim {
 
         planStamp[i]++; // invalida el anterior
         if (Double.isFinite(nx.dt)) {
-            pq.add(new PQEvent(T + nx.dt, i, planStamp[i]));
+            pq.add(new Event(T + nx.dt, i, planStamp[i]));
         }
 
         if (this.verbose) {

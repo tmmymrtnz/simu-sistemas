@@ -21,7 +21,7 @@ public class Main {
         List<Wall>  walls  = map.walls;                     // ya definidas
 
         TargetEventSim sim = new TargetEventSim(agents, walls);
-        sim.run(/*tMax=*/5.0, logPath);
+        sim.run(/*tMax=*/10, logPath,false);
 
         System.out.println("Simulación finalizada. Log en: " + logPath.toAbsolutePath());
     }
