@@ -15,8 +15,7 @@ public final class TargetEventSim {
         Kind kind = Kind.NONE;
         int partner = -1;
         Wall wall = null;
-        double dt = Double.POSITIVE_INFINITY; // tiempo relativo desde T
-        // para explicar por qué: mejores candidatos parciales
+        double dt = Double.POSITIVE_INFINITY;
         double bestWallDt = Double.POSITIVE_INFINITY;
         double bestPartDt = Double.POSITIVE_INFINITY;
     }
@@ -29,128 +28,205 @@ public final class TargetEventSim {
 
     private final List<Agent> A;
     private final List<Wall>  W;
-    private final int N; //size de los agents
+    private final int N;
 
-    private double T = 0.0;            // tiempo global
-    private final NextParticleEvent[] next;         // próximo objetivo por partícula
-    private final int[] planStamp;     // invalida eventos viejos de i
-    private final int[] stateStamp;    // si cambia estado de i (no lo usamos aquí pero queda útil)
-    private final List<Set<Integer>> dependents; // quiénes tenían a j como objetivo
+    private final double Lf, L;             // para presiones/recintos
+    private final PressureTracker pressure; // acumulador de presión
+
+    private double T = 0.0;
+    private final NextParticleEvent[] next;
+    private final int[] planStamp;
+    private final List<Set<Integer>> dependents;
 
     private final PriorityQueue<Event> pq = new PriorityQueue<>();
-
-    // verbose flag (prints a stdout)
     private boolean verbose = false;
 
-    public TargetEventSim(List<Agent> agents, List<Wall> walls){
+    public TargetEventSim(List<Agent> agents, List<Wall> walls, double L_fixed, double L){
         this.A = agents; this.W = walls; this.N = agents.size();
+        this.Lf = L_fixed; this.L = L;
+        this.pressure = new PressureTracker(L_fixed, L);
         this.next = new NextParticleEvent[N];
         this.planStamp = new int[N];
-        this.stateStamp = new int[N];
         this.dependents = new ArrayList<>(N);
         for (int i=0;i<N;i++){ next[i]=new NextParticleEvent(); dependents.add(new HashSet<>()); }
     }
 
-    /** Corre la simulación por eventos hasta tMax y escribe log txt. Si verbose=true, imprime a consola. */
-    public void run(double tMax, Path logPath, boolean verbose) throws IOException {
+    /** Corre la simulación por eventos hasta tMax, logea eventos y presión. */
+    public void run(double tMax, Path eventsPath, Path pressurePath, boolean verbose) throws IOException {
         this.verbose = verbose;
 
-        // inicial: planificar el "siguiente choque" para todos
+        // Asegura extensión .txt
+        eventsPath   = ensureTxt(eventsPath);
+        pressurePath = ensureTxt(pressurePath);
+
         for (int i=0;i<N;i++) recomputeNextAndEnqueue(i);
 
-        try (BufferedWriter out = Files.newBufferedWriter(logPath, StandardCharsets.UTF_8,
-                StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING)) {
-            writeSnapshot(out, "INIT");
-            if (this.verbose) System.out.printf("== INIT  T=%.9f  N=%d\n", T, N);
+        try (BufferedWriter evLog = Files.newBufferedWriter(eventsPath, StandardCharsets.UTF_8,
+                                                            StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+             BufferedWriter pLog  = Files.newBufferedWriter(pressurePath, StandardCharsets.UTF_8,
+                                                            StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING)) {
+
+            writeSnapshot(evLog, "INIT");
+            writePressureHeader(pLog);
+            writePressureSample(pLog); // t=0
+            if (verbose) System.out.printf("== INIT  T=%.9f  N=%d%n", T, N);
+
+            int steadyCount = 0;
 
             while (!pq.isEmpty() && T < tMax){
                 Event ev = pq.poll();
-                if (ev.stamp != planStamp[ev.i]) continue; // si prendi el flag de invalido lo paso de largo  (borrado logico)
-                if (ev.tAbs < T) continue;  // si es viejo, lo ignoro (tal vez no hace falta)
+                if (ev.stamp != planStamp[ev.i]) continue;
+                if (ev.tAbs < T) continue;
 
+                // --- evitar procesar eventos más allá de tMax ---
+                if (ev.tAbs > tMax) {
+                    trackVirtualCrossings(tMax - T); // última contribución virtual
+                    advanceAll(tMax - T);
+                    T = tMax;
+                    writeSnapshot(evLog, "END");
+                    writePressureSample(pLog);
+                    if (verbose) System.out.printf("== END   T=%.9f (clamped to tMax)%n", T);
+                    return;
+                }
+
+                // Antes de avanzar, registrar cruces por la pared imaginaria x=Lf (Recinto 1)
+                trackVirtualCrossings(ev.tAbs - T);
+
+                // Avanzar al evento
                 double dt = ev.tAbs - T;
-                if (dt > 0) {  // avanzo todo al proximo evento
-                    for (Agent a: A){ a.x += a.vx*dt; a.y += a.vy*dt; }
-                    if (this.verbose)
-                        System.out.printf("[advance] Δt=%.9f  from T=%.9f -> T'=%.9f (i=%d)\n",
+                if (dt > 0) {
+                    advanceAll(dt);
+                    if (verbose)
+                        System.out.printf("[advance] Δt=%.9f  from T=%.9f -> T'=%.9f (i=%d)%n",
                                 dt, T, ev.tAbs, A.get(ev.i).id);
                     T = ev.tAbs;
                 }
 
-                NextParticleEvent nx = next[ev.i]; //agarro el proximo evento planeado
+                NextParticleEvent nx = next[ev.i];
                 if (nx.kind == Kind.NONE || !Double.isFinite(nx.dt)) continue;
 
                 if (nx.kind == Kind.WALL) {
                     Agent ai = A.get(ev.i);
                     double[] nrm = Collisions.wallImpactNormal(ai, nx.wall);
-                    if (this.verbose) {
-                        System.out.printf("[event]  PW  T=%.9f  i=%d  wall=(%.4f,%.4f)-(%.4f,%.4f)  cause: min{ wall=%.6f , part=%.6f }=%.6f\n",
+
+                    // impulso normal previo a la reflexión
+                    double vn = ai.vx*nrm[0] + ai.vy*nrm[1];
+                    double J  = (vn < 0 ? 2.0 * ai.mass * (-vn) : 0.0);
+                    pressure.addRealWallImpulse(nx.wall, J);
+
+                    if (verbose) {
+                        System.out.printf("[event]  PW  T=%.9f  i=%d  wall=(%.4f,%.4f)-(%.4f,%.4f)  cause: min{ wall=%.6f , part=%.6f }=%.6f  | J=%.6e%n",
                                 T, ai.id, nx.wall.x1, nx.wall.y1, nx.wall.x2, nx.wall.y2,
-                                nx.bestWallDt, nx.bestPartDt, nx.dt);
+                                nx.bestWallDt, nx.bestPartDt, nx.dt, J);
                     }
+
                     Collisions.resolveParticleWall(ai, nrm[0], nrm[1]);
                     microSeparate(ai, nrm[0], nrm[1]);
-                    stateStamp[ev.i]++;
 
-                    writeEvent(out, String.format("PW i=%d wall=(%.6f,%.6f)-(%.6f,%.6f)",
+                    writeEvent(evLog, String.format("PW i=%d wall=(%.6f,%.6f)-(%.6f,%.6f)",
                             ai.id, nx.wall.x1, nx.wall.y1, nx.wall.x2, nx.wall.y2));
 
-                    // replanificar i + watchers(i)
+                    // Replanificar i y watchers
                     Set<Integer> watchers = new HashSet<>(dependents.get(ev.i));
-                    recomputeNextAndEnqueue(ev.i); // para la partícula que disparó el evento
-                    if (this.verbose)
-                        System.out.printf("[replan]  i=%d  watchers=%d\n", ai.id, watchers.size());
-                    for (int k : watchers) recomputeNextAndEnqueue(k); //para todas las particulas que iban a chocar conmigo
+                    recomputeNextAndEnqueue(ev.i);
+                    if (verbose)
+                        System.out.printf("[replan]  i=%d  watchers=%d%n", ai.id, watchers.size());
+                    for (int k : watchers) recomputeNextAndEnqueue(k);
 
                 } else { // PARTICLE
                     int j = nx.partner;
                     Agent ai = A.get(ev.i), aj = A.get(j);
-                    if (this.verbose) {
-                        System.out.printf("[event]  PP  T=%.9f  i=%d  j=%d  cause: min{ wall=%.6f , part=%.6f }=%.6f\n",
+                    if (verbose) {
+                        System.out.printf("[event]  PP  T=%.9f  i=%d  j=%d  cause: min{ wall=%.6f , part=%.6f }=%.6f%n",
                                 T, ai.id, aj.id, nx.bestWallDt, nx.bestPartDt, nx.dt);
                     }
                     Collisions.resolveParticleParticle(ai, aj);
 
-                    // separador mínimo
+                    // Separador mínimo
                     double dx = aj.x - ai.x, dy = aj.y - ai.y, d = hypot(dx,dy);
-                    if (d > 1e-12) {
-                        double nxn = dx/d, nyn = dy/d, sep=1e-9;
+                    if (d > Constants.TIME_EPS) {
+                        double nxn = dx/d, nyn = dy/d, sep=Constants.TIME_EPS;
                         ai.x -= nxn*sep; ai.y -= nyn*sep;
                         aj.x += nxn*sep; aj.y += nyn*sep;
                     }
 
-                    stateStamp[ev.i]++; stateStamp[j]++;
+                    writeEvent(evLog, String.format("PP i=%d j=%d", ai.id, aj.id));
 
-                    writeEvent(out, String.format("PP i=%d j=%d", ai.id, aj.id));
-
-                    // replan: i, j y watchers(i ∪ j)
-                    Set<Integer> watchersI = new HashSet<>(dependents.get(ev.i)); 
+                    // Replanificar i, j y watchers
+                    Set<Integer> watchersI = new HashSet<>(dependents.get(ev.i));
                     Set<Integer> watchersJ = new HashSet<>(dependents.get(j));
-                    recomputeNextAndEnqueue(ev.i); //recalculo las dos particulas
+                    recomputeNextAndEnqueue(ev.i);
                     recomputeNextAndEnqueue(j);
-                    if (this.verbose)
-                        System.out.printf("[replan]  i=%d watchers=%d | j=%d watchers=%d\n",
+                    if (verbose)
+                        System.out.printf("[replan]  i=%d watchers=%d | j=%d watchers=%d%n",
                                 ai.id, watchersI.size(), aj.id, watchersJ.size());
-                    for (int k : watchersI) recomputeNextAndEnqueue(k); //recalculo los que dependen de i 
-                    for (int k : watchersJ) if (k!=ev.i) recomputeNextAndEnqueue(k); // recalculo los que dependen de j (salteando i que ya lo hice)
+                    for (int k : watchersI) recomputeNextAndEnqueue(k);
+                    for (int k : watchersJ) if (k!=ev.i) recomputeNextAndEnqueue(k);
                 }
 
-                writeSnapshot(out, "POST");
+                writeSnapshot(evLog, "POST");
+                writePressureSample(pLog);
+
+                // Chequeo de “estado estacionario”: P1 ≈ P2 durante varias muestras
+                double p1 = pressure.pressureLeft(T), p2 = pressure.pressureRight(T);
+                double rel = abs(p1 - p2) / max(max(p1, p2), 1e-12);
+                if (rel <= Constants.PRESSURE_TOL) steadyCount++;
+                else steadyCount = 0;
+
+                if (steadyCount >= Constants.STEADY_SAMPLES) {
+                    if (verbose) System.out.printf("== END   T=%.9f (steady: |P1-P2|/max ≤ %.3f for %d samples)%n",
+                            T, Constants.PRESSURE_TOL, Constants.STEADY_SAMPLES);
+                    writeSnapshot(evLog, "END");
+                    writePressureSample(pLog);
+                    return;
+                }
+
                 if (T >= tMax) break;
             }
 
-            writeSnapshot(out, "END");
-            if (this.verbose) System.out.printf("== END   T=%.9f\n", T);
+            writeSnapshot(evLog, "END");
+            writePressureSample(pLog);
+            if (verbose) System.out.printf("== END   T=%.9f%n", T);
+        }
+    }
+
+    // ---------- avance y cruces virtuales ----------
+
+    private void advanceAll(double dt){
+        if (dt <= 0) return;
+        for (Agent a: A){ a.x += a.vx*dt; a.y += a.vy*dt; }
+    }
+
+    /** Registra impulsos “virtuales” si alguna partícula del recinto izquierdo cruza x=Lf. */
+    private void trackVirtualCrossings(double dt){
+        if (dt <= 0) return;
+        final double Lf = this.Lf;
+
+        for (Agent a : A) {
+            double x0 = a.x, y0 = a.y;
+            if (!pressure.isInsideLeft(x0, y0)) continue;     // solo las que están dentro del recinto 1
+            if (a.vx <= 0) continue;                          // debe ir hacia +x
+            double tCross = (Lf - x0) / a.vx;                  // tiempo de cruce con la vertical x=Lf
+            if (tCross > 0 && tCross <= dt) {
+                double yCross = y0 + a.vy * tCross;
+                if (yCross >= -1e-12 && yCross <= Lf + 1e-12) {
+                    double J = 2.0 * a.mass * a.vx;           // impulso virtual |Δp_n|
+                    pressure.addVirtualLeftImpulse(J);
+                    if (verbose) {
+                        System.out.printf("[virt]   T≈%.9f  id=%d crosses x=Lf -> J=%.6e%n",
+                                (T + tCross), a.id, J);
+                    }
+                }
+            }
         }
     }
 
     // ---------- planificación ----------
 
     private void recomputeNextAndEnqueue(int i){
-        // quitar dependencia vieja
-        NextParticleEvent old = next[i]; 
+        NextParticleEvent old = next[i];
         if (old.kind == Kind.PARTICLE && old.partner >= 0) {
-            dependents.get(old.partner).remove(i); // aviso que i ya no depende del resto, porque voy a replanificar
+            dependents.get(old.partner).remove(i);
         }
 
         Agent ai = A.get(i);
@@ -181,32 +257,36 @@ public final class TargetEventSim {
         nx.kind = bestKind; nx.partner = bestPartner; nx.wall = bestWall; nx.dt = bestDt;
         nx.bestWallDt = bestWallDt; nx.bestPartDt = bestPartDt;
 
-        // dependencias
-        if (nx.kind == Kind.PARTICLE && nx.partner >= 0) {
-            dependents.get(nx.partner).add(i);
-        }
+        if (nx.kind == Kind.PARTICLE && nx.partner >= 0) dependents.get(nx.partner).add(i);
 
-        planStamp[i]++; // invalida el anterior
-        if (Double.isFinite(nx.dt)) {
-            pq.add(new Event(T + nx.dt, i, planStamp[i]));
-        }
+        planStamp[i]++;
+        if (Double.isFinite(nx.dt)) pq.add(new Event(T + nx.dt, i, planStamp[i]));
 
-        if (this.verbose) {
+        if (verbose) {
             if (nx.kind == Kind.WALL && nx.wall != null) {
-                System.out.printf("[plan]    T=%.9f  i=%d  next=WALL dt=%.9f  (bestWall=%.9f, bestPart=%.9f)  wall=(%.4f,%.4f)-(%.4f,%.4f)\n",
+                System.out.printf("[plan]    T=%.9f  i=%d  next=WALL dt=%.9f  (bestWall=%.9f, bestPart=%.9f)  wall=(%.4f,%.4f)-(%.4f,%.4f)%n",
                         T, A.get(i).id, nx.dt, nx.bestWallDt, nx.bestPartDt,
                         nx.wall.x1, nx.wall.y1, nx.wall.x2, nx.wall.y2);
             } else if (nx.kind == Kind.PARTICLE) {
-                System.out.printf("[plan]    T=%.9f  i=%d  next=PART dt=%.9f  (bestWall=%.9f, bestPart=%.9f)  j=%d\n",
-                        T, A.get(i).id, nx.dt, nx.bestWallDt, nx.bestPartDt,
-                        A.get(nx.partner).id);
+                System.out.printf("[plan]    T=%.9f  i=%d  next=PART dt=%.9f  (bestWall=%.9f, bestPart=%.9f)  j=%d%n",
+                        T, A.get(i).id, nx.dt, nx.bestWallDt, nx.bestPartDt, A.get(nx.partner).id);
             } else {
-                System.out.printf("[plan]    T=%.9f  i=%d  next=NONE\n", T, A.get(i).id);
+                System.out.printf("[plan]    T=%.9f  i=%d  next=NONE%n", T, A.get(i).id);
             }
         }
     }
 
-    // ---------- logging a archivo ----------
+    // ---------- logging ----------
+
+    private static Path ensureTxt(Path p){
+        String base = p.getFileName().toString();
+        if (!base.toLowerCase().endsWith(".txt")) {
+            int dot = base.lastIndexOf('.');
+            String name = (dot >= 0 ? base.substring(0, dot) : base) + ".txt";
+            return p.resolveSibling(name);
+        }
+        return p;
+    }
 
     private void writeSnapshot(BufferedWriter out, String tag) throws IOException {
         out.write(String.format(java.util.Locale.US, "SNAPSHOT %s t=%.9f", tag, T));
@@ -215,16 +295,29 @@ public final class TargetEventSim {
                     " | id=%d x=%.6f y=%.6f vx=%.6f vy=%.6f r=%.6f",
                     a.id, a.x, a.y, a.vx, a.vy, a.r));
         }
-        out.write("\n");
+        out.newLine();
     }
 
     private void writeEvent(BufferedWriter out, String desc) throws IOException {
-        out.write(String.format(java.util.Locale.US, "EVENT t=%.9f %s\n", T, desc));
+        out.write(String.format(java.util.Locale.US, "EVENT t=%.9f %s", T, desc));
+        out.newLine();
+    }
+
+    private void writePressureHeader(BufferedWriter out) throws IOException {
+        out.write(String.format(java.util.Locale.US,
+                "# t  P_left  P_right   | perimLeft=%.6f perimRight=%.6f%n",
+                pressure.getPerimLeft(), pressure.getPerimRight()));
+    }
+
+    private void writePressureSample(BufferedWriter out) throws IOException {
+        out.write(String.format(java.util.Locale.US, "%.9f %.9e %.9e%n",
+                T, pressure.pressureLeft(T), pressure.pressureRight(T)));
     }
 
     // ---------- helpers ----------
 
     private static void microSeparate(Agent a, double nx, double ny){
-        double sep = 1e-9; a.x += nx*sep; a.y += ny*sep;
+        double sep = Constants.TIME_EPS;
+        a.x += nx*sep; a.y += ny*sep;
     }
 }
