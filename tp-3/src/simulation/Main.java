@@ -1,6 +1,7 @@
 package simulation;
 
 import java.nio.file.Path;
+import java.nio.file.Files;
 import java.util.List;
 import java.util.Locale;
 
@@ -27,8 +28,7 @@ public class Main {
             }
         } else {
             System.out.println("[warn] Parámetros no provistos. Usando por defecto: N=" + N + " L=" + L);
-            System.out.println("       (Sugerido) " +
-                    "java -jar sim.jar <N> <L>");
+            System.out.println("       (Sugerido) java -jar sim.jar <N> <L>");
         }
 
         Map map = new Map(L);
@@ -41,8 +41,12 @@ public class Main {
         String Lstr = String.format(Locale.US, "%.3f", map.L);
         String Nstr = Integer.toString(N);
 
-        Path eventsPath   = Path.of("events_L=" + Lstr + "_N=" + Nstr + ".txt");
-        Path pressurePath = Path.of("pressure_L=" + Lstr + "_N=" + Nstr + ".txt");
+        // --- NUEVO: carpeta de salida 'out' ---
+        Path outDir = Path.of("out");
+        Files.createDirectories(outDir); // crea si no existe
+
+        Path eventsPath   = outDir.resolve("events_L=" + Lstr + "_N=" + Nstr + ".txt");
+        Path pressurePath = outDir.resolve("pressure_L=" + Lstr + "_N=" + Nstr + ".txt");
 
         TargetEventSim sim = new TargetEventSim(agents, walls, map.L_fixed, map.L);
 
