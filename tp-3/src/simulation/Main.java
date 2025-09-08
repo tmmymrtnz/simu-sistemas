@@ -47,9 +47,9 @@ public class Main {
         TargetEventSim sim = new TargetEventSim(agents, walls, map.L_fixed, map.L);
 
         // tMax es una cota dura; además el simulador corta cuando P_left~P_right durante STEADY_SAMPLES
-        double tMax = 60.0;
+        double tMax = 500.0;
         // verbose=true para prints en consola
-        sim.run(tMax, eventsPath, pressurePath, /*verbose=*/true);
+        sim.run(tMax, eventsPath, pressurePath, /*verbose=*/ false);
 
         System.out.println("Listo. Logs:");
         System.out.println(" - " + eventsPath.toAbsolutePath());

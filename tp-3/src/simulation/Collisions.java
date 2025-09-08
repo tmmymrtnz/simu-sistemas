@@ -59,7 +59,7 @@ public final class Collisions {
             if (candB < best) best = candB;
         }
 
-        // extremos
+        // extremos (vértices) — se manejan solo como "point hit"
         double tp1 = timeToPoint(a, w.x1, w.y1);
         if (tp1 < best) best = tp1;
         double tp2 = timeToPoint(a, w.x2, w.y2);
@@ -115,13 +115,9 @@ public final class Collisions {
 
         double nx = dx/d, ny = dy/d;
 
-        // Usar el mismo relativo que la detección: (v_a - v_b)·n
         double rel = (a.vx - b.vx)*nx + (a.vy - b.vy)*ny;
-
-        // Si rel <= 0 están separándose o tangenciales: no hay impulso
         if (rel <= 0) return;
 
-        // Impulso para m1=m2, e=1: v_a' = v_a - rel n ; v_b' = v_b + rel n
         a.vx -= rel * nx; a.vy -= rel * ny;
         b.vx += rel * nx; b.vy += rel * ny;
     }
@@ -130,6 +126,7 @@ public final class Collisions {
 
     private static double checkWallSegmentHit(Agent a, Wall w, double t) {
         final double EPS = Constants.TIME_EPS;
+        final double S_EPS = 1e-9; // evita contar vértices como "segment hit"
 
         if (!(t >= EPS && Double.isFinite(t))) return Double.POSITIVE_INFINITY;
         double cx = a.x + a.vx*t, cy = a.y + a.vy*t;
@@ -137,7 +134,9 @@ public final class Collisions {
         double L2 = ux*ux + uy*uy;
         double wx = cx - w.x1, wy = cy - w.y1;
         double s  = (wx*ux + wy*uy)/L2;
-        if (s < -1e-12 || s > 1.0 + 1e-12) return Double.POSITIVE_INFINITY;
+
+        // solo interior estricto del segmento
+        if (s <= S_EPS || s >= 1.0 - S_EPS) return Double.POSITIVE_INFINITY;
 
         // evitar tangencial pura
         double nx = -uy, ny = ux;

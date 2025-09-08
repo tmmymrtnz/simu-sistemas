@@ -18,8 +18,10 @@ public class Map {
         walls.add(new Wall(0, L_fixed, L_fixed, L_fixed));
 
         // Dos “puertas” verticales
-        walls.add(new Wall(L_fixed, 0, L_fixed, (L_fixed - L)/2));
-        walls.add(new Wall(L_fixed, L_fixed, L_fixed, (L_fixed + L)/2));
+        if (L != L_fixed) { // evitar solapamiento paredes si L = L_fixed
+            walls.add(new Wall(L_fixed, 0, L_fixed, (L_fixed - L)/2));
+            walls.add(new Wall(L_fixed, L_fixed, L_fixed, (L_fixed + L)/2));
+        }
 
         // Pasillo horizontal
         walls.add(new Wall(L_fixed, (L_fixed - L)/2, 2*L_fixed, (L_fixed - L)/2));
