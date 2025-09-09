@@ -62,8 +62,8 @@ def run_java_pair(src_dir: Path, N: int, L: float):
     N_str = str(N)
     L_str = f"{L:.3f}"
     sh(["java", "-jar", "sim.jar", N_str, L_str], cwd=src_dir)
-    events = src_dir / f"events_L={L_str}_N={N_str}.txt"
-    press  = src_dir / f"pressure_L={L_str}_N={N_str}.txt"
+    events = src_dir / "out" / f"events_L={L_str}_N={N_str}.txt"
+    press  = src_dir / "out" / f"pressure_L={L_str}_N={N_str}.txt"
     if not press.exists():
         raise FileNotFoundError(f"No se encontró {press} tras ejecutar la simulación.")
     return events, press
