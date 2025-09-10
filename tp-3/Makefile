@@ -30,6 +30,11 @@ pressure_fit:
 clean:
 	@echo "Cleaning generated files..."
 	rm -rf src/out
+	rm -rf out
 	rm -rf src/events_L*
 	rm -rf src/pressure_L*
 	rm -rf anim.mp4
+
+clean_all: 
+	make clean
+	rm -rf src/simulation/*.class

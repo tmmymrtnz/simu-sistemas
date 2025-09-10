@@ -342,9 +342,26 @@ public final class TargetEventSim {
         a.x += nx*sep; a.y += ny*sep;
     }
 
+
+    private void separateParticles(Agent a, Agent b, double dx, double dy, double d) {
+        final double MIN_DISTANCE = a.r + b.r;
+        final double OVERLAP_THRESHOLD = 0.001 * MIN_DISTANCE;
+      if (d == 0) {
+           a.x += (Math.random() - 0.5) * 1e-6;
+            a.y += (Math.random() - 0.5) * 1e-6;
+            b.x += (Math.random() - 0.5) * 1e-6;
+            b.y += (Math.random() - 0.5) * 1e-6;
+        } else if (d < MIN_DISTANCE + OVERLAP_THRESHOLD) {
+            double sep = Constants.TIME_EPS;
+           a.x -= (dx / d) * sep; a.y -= (dy / d) * sep;
+            b.x += (dx / d) * sep; b.y += (dy / d) * sep;
+        }
+    }
+
     // ---------- util vértices ----------
     private static boolean near(double a, double b, double eps){ return Math.abs(a-b) <= eps; }
 
+   
     /** Busca una pared contigua que comparta el vértice (vx,vy) con w (excluye w). */
     private Wall findAdjacentWallAtVertex(Wall w, double vx, double vy){
         final double EPSV = 1e-9;
@@ -357,4 +374,5 @@ public final class TargetEventSim {
         }
         return null;
     }
+
 }

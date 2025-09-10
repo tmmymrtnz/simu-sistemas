@@ -36,12 +36,51 @@ public class Map {
         List<Agent> newParticles = new ArrayList<>();
         double speed = 0.01;
         double r = 0.0015;
+        double min_dist_sq = Math.pow(2 * r, 2);
 
         int baseId = this.particles.size();
         for (int i = 0; i < qty; i++) {
-            // Dentro del cuadrado [r, L_fixed - r]
-            double x = Math.random() * (L_fixed - 2*r) + r;
-            double y = Math.random() * (L_fixed - 2*r) + r;
+            double x, y;
+            int attempts = 0;
+            final int max_attempts = 10000; // Avoid infinite loops
+
+            while (true) {
+                attempts++;
+                if (attempts > max_attempts) {
+                    throw new RuntimeException("Could not place particle " + (baseId + i) +
+                                               " without overlap after " + max_attempts + " attempts.");
+                }
+
+                boolean overlaps = false;
+                // Dentro del cuadrado [r, L_fixed - r]
+                x = Math.random() * (L_fixed - 2*r) + r;
+                y = Math.random() * (L_fixed - 2*r) + r;
+
+                // Check against particles from previous batches
+                for (Agent p : this.particles) {
+                    double dx = x - p.x;
+                    double dy = y - p.y;
+                    if (dx*dx + dy*dy < min_dist_sq) {
+                        overlaps = true;
+                        break;
+                    }
+                }
+                if (overlaps) continue;
+
+                // Check against new particles from this batch
+                for (Agent p : newParticles) {
+                    double dx = x - p.x;
+                    double dy = y - p.y;
+                    if (dx*dx + dy*dy < min_dist_sq) {
+                        overlaps = true;
+                        break;
+                    }
+                }
+
+                if (!overlaps) {
+                    break; // Found a valid position
+                }
+            }
 
             double angle = Math.random() * 2 * Math.PI;
             double vx = speed * Math.cos(angle);
