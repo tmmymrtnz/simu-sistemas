@@ -55,13 +55,16 @@ def compile_java(src_dir: Path):
         raise FileNotFoundError("No se generó sim.jar")
 
 def run_java_once(src_dir: Path, N: int, L: float) -> Tuple[Path, Path]:
-    jar = src_dir / "sim.jar"
+    project_root = src_dir.parent
+    jar_path_rel = (src_dir / "sim.jar").relative_to(project_root)
+    jar = project_root / jar_path_rel
     if not jar.exists():
         raise FileNotFoundError(f"No existe {jar}.")
     N_str = str(N); L_str = f"{L:.3f}"
-    sh(["java", "-jar", "sim.jar", N_str, L_str], cwd=src_dir)
-    events = src_dir /  "out" / f"events_L={L_str}_N={N_str}.txt"
-    press  = src_dir / "out" / f"pressure_L={L_str}_N={N_str}.txt"
+    sh(["java", "-jar", str(jar_path_rel), N_str, L_str], cwd=project_root)
+    out_dir = project_root / "out"
+    events = out_dir / f"events_L={L_str}_N={N_str}.txt"
+    press  = out_dir / f"pressure_L={L_str}_N={N_str}.txt"
     if not press.exists():
         raise FileNotFoundError(f"No se encontró {press}")
     return events, press
@@ -177,9 +180,9 @@ def main():
     ap.add_argument("--last-n", type=int, default=None,
                     help="Usar SOLO los últimos N puntos de cada corrida (ignora detección de estacionario).")
     # Salidas
-    ap.add_argument("--csv-out", type=str, default="batch_steady_pressure.csv")
-    ap.add_argument("--plot-out", type=str, default="batch_fit_P_vs_Ainv.png")
-    ap.add_argument("--plot2-out", type=str, default="batch_PA_vs_L.png")
+    ap.add_argument("--csv-out", type=str, default="out/batch_steady_pressure.csv")
+    ap.add_argument("--plot-out", type=str, default="out/batch_fit_P_vs_Ainv.png")
+    ap.add_argument("--plot2-out", type=str, default="out/batch_PA_vs_L.png")
     ap.add_argument("--show", action="store_true")
     args = ap.parse_args()
 
@@ -208,7 +211,7 @@ def main():
             # Ejecutar Java
             _, pr_path = run_java_once(src_dir, N, L)
             # Copiar a nombre único
-            dst = src_dir / f"pressure_L={L:.3f}_N={N}_rep{r}.txt"
+            dst = pr_path.parent / f"pressure_L={L:.3f}_N={N}_rep{r}.txt"
             shutil.copy2(pr_path, dst)
             print(f"[ok] {dst.name}")
             time.sleep(0.2)  # desincronizar seeds

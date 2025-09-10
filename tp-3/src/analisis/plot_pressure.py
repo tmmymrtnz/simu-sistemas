@@ -58,12 +58,20 @@ def compile_java(src_dir: Path):
 
 
 def run_java_pair(src_dir: Path, N: int, L: float):
-    """Corre una simulación para el par (N,L) desde src/."""
+    """Corre una simulación para el par (N,L) desde el root del proyecto."""
+    project_root = src_dir.parent
+    jar_path_rel = (src_dir / "sim.jar").relative_to(project_root)
+    jar = project_root / jar_path_rel
+    if not jar.exists():
+        raise FileNotFoundError(f"No se generó sim.jar en {src_dir}")
+
     N_str = str(N)
     L_str = f"{L:.3f}"
-    sh(["java", "-jar", "sim.jar", N_str, L_str], cwd=src_dir)
-    events = src_dir / "out" / f"events_L={L_str}_N={N_str}.txt"
-    press  = src_dir / "out" / f"pressure_L={L_str}_N={N_str}.txt"
+    sh(["java", "-jar", str(jar_path_rel), N_str, L_str], cwd=project_root)
+    
+    out_dir = project_root / "out"
+    events = out_dir / f"events_L={L_str}_N={N_str}.txt"
+    press  = out_dir / f"pressure_L={L_str}_N={N_str}.txt"
     if not press.exists():
         raise FileNotFoundError(f"No se encontró {press} tras ejecutar la simulación.")
     return events, press
@@ -118,7 +126,7 @@ def main():
     ap.add_argument("--Ns", type=int, nargs="+", required=True, help="Lista de Ns (cantidad de partículas).")
     ap.add_argument("--Ls", type=float, nargs="+", required=True, help="Lista de Ls (apertura del pasillo, en m).")
     ap.add_argument("--no-compile", action="store_true", help="No recompilar Java (usa sim.jar existente).")
-    ap.add_argument("--out", default="pressure_plot.png", help="Imagen de salida del gráfico.")
+    ap.add_argument("--out", default="out/pressure_plot.png", help="Imagen de salida del gráfico.")
     ap.add_argument("--show", action="store_true", help="Mostrar gráfico en pantalla.")
     ap.add_argument("--moving-avg", type=int, default=1, help="Ventana de media móvil (muestras).")
     ap.add_argument("--diff", action="store_true", help="Graficar P_left - P_right.")

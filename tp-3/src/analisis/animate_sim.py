@@ -61,16 +61,19 @@ def compile_java(src_dir: Path) -> Path:
     return jar_path
 
 def run_java_once(src_dir: Path, N: int, L: float) -> Tuple[Path, Path]:
-    jar = src_dir / "sim.jar"
+    project_root = src_dir.parent
+    jar_path_rel = (src_dir / "sim.jar").relative_to(project_root)
+    jar = project_root / jar_path_rel
     if not jar.exists():
         raise FileNotFoundError(f"No existe {jar}; compilá primero o no uses --no-compile")
 
     N_str = str(N)
     L_str = f"{L:.3f}"
-    sh(["java", "-jar", "sim.jar", N_str, L_str], cwd=src_dir)
+    sh(["java", "-jar", str(jar_path_rel), N_str, L_str], cwd=project_root)
 
-    events = src_dir / "out" / f"events_L={L_str}_N={N_str}.txt"
-    press  = src_dir / "out" / f"pressure_L={L_str}_N={N_str}.txt"
+    out_dir = project_root / "out"
+    events = out_dir / f"events_L={L_str}_N={N_str}.txt"
+    press  = out_dir / f"pressure_L={L_str}_N={N_str}.txt"
     if not events.exists():
         raise FileNotFoundError(f"No se encontró {events}")
     return events, press
@@ -280,7 +283,7 @@ def main():
     ap.add_argument("--L", type=float, help="Apertura del pasillo (m)")
     ap.add_argument("--use-file", type=str, help="Ruta a un events_*.txt existente (saltea ejecutar Java)")
     ap.add_argument("--no-compile", action="store_true", help="No recompilar Java (usa sim.jar existente)")
-    ap.add_argument("--out", type=str, default="anim.mp4", help="Archivo de salida (mp4 o gif)")
+    ap.add_argument("--out", type=str, default="out/anim.mp4", help="Archivo de salida (mp4 o gif)")
     ap.add_argument("--fps", type=int, default=30, help="FPS objetivo del video (define la grilla temporal uniforme)")
     ap.add_argument("--skip", type=int, default=1, help="Tomar 1 de cada 'skip' frames DESPUÉS del re-muestreo")
     ap.add_argument("--show", action="store_true", help="Mostrar la animación al finalizar")
@@ -324,6 +327,11 @@ def main():
     L_for_walls = args.L if args.L is not None else L_FIXED
     out_path = Path(args.out)
     animate_snapshots(snaps, L=L_for_walls, out_path=out_path, fps=max(1, args.fps), skip=max(1, args.skip), show=args.show)
+
+
+if __name__ == "__main__":
+    main()
+rgs.show
 
 
 if __name__ == "__main__":
