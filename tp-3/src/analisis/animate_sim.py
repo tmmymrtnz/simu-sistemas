@@ -331,7 +331,6 @@ def main():
 
 if __name__ == "__main__":
     main()
-rgs.show
 
 
 if __name__ == "__main__":

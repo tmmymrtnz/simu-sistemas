@@ -17,7 +17,7 @@ run: compile
 
 animate:
 	@echo "Animating simulation..."
-	python3 src/analisis/animate_sim.py --N 300 --L 0.09 --fps 100
+	python3 src/analisis/animate_sim.py --N 200 --L 0.03 --fps 100
 
 pressure_plot:
 	@echo "Plotting pressure data..."
@@ -25,7 +25,7 @@ pressure_plot:
 
 pressure_fit:
 	@echo "Fitting pressure data..."
-	python3 src/analisis/fit_pressure_vs_area.py --N 300 --Ls 0.030 0.050 0.070 0.090 --reps 3 --last-n 5 --show
+	python3 src/analisis/fit_pressure_vs_area.py --N 300 --Ls 0.030 0.050 0.070 0.090 --show
 
 diffusion_plot:
 	@echo "Plotting diffusion data (requires events_L=0.090_N=300.txt)..."
@@ -43,3 +43,7 @@ clean_all:
 	make clean
 	rm -rf src/simulation/*.class
 	rm -rf src/sim.jar
+
+only-plot:
+	@echo "Only plotting pressure data from existing files..."
+	python3 src/analisis/plot_pressure.py --Ns 300 --Ls 0.030 0.050 0.070 0.090 --use-file out/pressure_L=0.090_N=300.txt --show

@@ -125,12 +125,14 @@ def main():
     ap = argparse.ArgumentParser(description="Compila, corre y grafica presiones para múltiples N y L.")
     ap.add_argument("--Ns", type=int, nargs="+", required=True, help="Lista de Ns (cantidad de partículas).")
     ap.add_argument("--Ls", type=float, nargs="+", required=True, help="Lista de Ls (apertura del pasillo, en m).")
+    ap.add_argument("--use-file", type=str, help="Archivo de presión existente para graficar (no corre simulación).")
     ap.add_argument("--no-compile", action="store_true", help="No recompilar Java (usa sim.jar existente).")
     ap.add_argument("--out", default="out/pressure_plot.png", help="Imagen de salida del gráfico.")
     ap.add_argument("--show", action="store_true", help="Mostrar gráfico en pantalla.")
     ap.add_argument("--moving-avg", type=int, default=1, help="Ventana de media móvil (muestras).")
     ap.add_argument("--diff", action="store_true", help="Graficar P_left - P_right.")
     ap.add_argument("--rel-diff", action="store_true", help="Graficar |P_left - P_right| / max(P_left, P_right).")
+    
     args = ap.parse_args()
 
     # Este script está en src/analisis/
@@ -151,14 +153,26 @@ def main():
             sys.exit(1)
 
     # Ejecutar todas las combinaciones
-    pressure_files = []
-    for N in args.Ns:
-        for L in args.Ls:
-            try:
-                events, press = run_java_pair(src_dir, N=N, L=L)
-                pressure_files.append(press)
-            except Exception as e:
-                print(f"[warn] Falló N={N}, L={L:.3f}: {e}", file=sys.stderr)
+    pressure_files = [] 
+    if args.use_file:
+        # Buscar el archivo en la carpeta 'out' relativa al root del proyecto
+        project_root = src_dir.parent
+        pressure_path = project_root  / args.use_file
+        if not pressure_path.exists():
+            print(f"[error] No se encontró {pressure_path}", file=sys.stderr)
+            sys.exit(1)
+        pressure_files = [pressure_path]
+    else:
+        if not args.Ns or not args.Ls:
+            print("[error] Debes especificar --Ns y --Ls si no usas --use-file.", file=sys.stderr)
+            sys.exit(1)
+        for N in args.Ns:
+            for L in args.Ls:
+                try:
+                    events, press = run_java_pair(src_dir, N=N, L=L)
+                    pressure_files.append(press)
+                except Exception as e:
+                    print(f"[warn] Falló N={N}, L={L:.3f}: {e}", file=sys.stderr)
 
     if not pressure_files:
         print("[error] No hay archivos de presión para graficar.", file=sys.stderr)

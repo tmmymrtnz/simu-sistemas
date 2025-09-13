@@ -25,6 +25,7 @@ import subprocess
 import sys
 from pathlib import Path
 from typing import List, Tuple, Dict
+import os
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -94,6 +95,38 @@ def read_pressure_file(path: Path) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     p2 = np.asarray(p2, float)
     idx = np.argsort(t)
     return t[idx], p1[idx], p2[idx]
+
+
+# ...existing imports...
+import matplotlib.pyplot as plt
+
+def interactive_steady_point(t, p_mean, name=""):
+    fig, ax = plt.subplots()
+    ax.plot(t, p_mean, label="Presión media")
+    ax.set_xlabel("Tiempo (s)")
+    ax.set_ylabel("Presión (N/m)")
+    ax.set_title(f"{name}\nHaz click para marcar el inicio del estacionario")
+    ax.legend()
+    steady_idx = []
+
+    def onclick(event):
+        if event.inaxes != ax:
+            return
+        steady_idx.clear()
+        steady_idx.append(event.xdata)
+        ax.axvline(event.xdata, color='r', linestyle='--', label='Inicio estacionario')
+        ax.legend()
+        fig.canvas.draw()
+        idx = np.searchsorted(t, event.xdata)
+        p_mean_stationary = p_mean[idx:]
+        t_stationary = t[idx:]
+        mean = np.mean(p_mean_stationary)
+        std = np.std(p_mean_stationary, ddof=1)
+        print(f"[{name}] Desde t={event.xdata:.2f}s: Promedio={mean:.4f}, SD={std:.4f}, puntos={len(p_mean_stationary)}")
+
+    fig.canvas.mpl_connect('button_press_event', onclick)
+    plt.show()
+    return steady_idx[0] if steady_idx else None
 
 def find_steady_start(t: np.ndarray,
                       pL: np.ndarray,
@@ -166,19 +199,11 @@ def fit_through_origin(x: np.ndarray, y: np.ndarray) -> Tuple[float, float, floa
 # ----------------- Lógica principal -----------------
 
 def main():
-    ap = argparse.ArgumentParser(description="Corridas múltiples por L, promedio en steady-state o últimos N puntos, ajuste P ~ A^{-1}.")
+    ap = argparse.ArgumentParser(description="Corrida única por L, promedio en steady-state manual, ajuste P ~ A^{-1}.")
     ap.add_argument("--N", type=int, required=True, help="Cantidad de partículas (fijo para todas las L).")
     ap.add_argument("--Ls", type=float, nargs="+", required=True, help="Lista de L (m).")
-    ap.add_argument("--reps", type=int, default=5, help="Corridas por cada L (default=5).")
     ap.add_argument("--L-fixed", type=float, default=L_FIXED_DEFAULT, help="L_fixed (m).")
     ap.add_argument("--no-compile", action="store_true", help="No recompilar Java (usa sim.jar existente).")
-    # Estacionario / alternativas
-    ap.add_argument("--steady-tol", type=float, default=0.03)
-    ap.add_argument("--steady-win", type=float, default=2.0)
-    ap.add_argument("--steady-persist", type=float, default=2.0)
-    ap.add_argument("--fallback-last-frac", type=float, default=0.30)
-    ap.add_argument("--last-n", type=int, default=None,
-                    help="Usar SOLO los últimos N puntos de cada corrida (ignora detección de estacionario).")
     # Salidas
     ap.add_argument("--csv-out", type=str, default="out/batch_steady_pressure.csv")
     ap.add_argument("--plot-out", type=str, default="out/batch_fit_P_vs_Ainv.png")
@@ -198,81 +223,58 @@ def main():
     Ls = [float(L) for L in args.Ls]
     Lf = float(args.L_fixed)
 
-    # Limpiar viejos _rep*.txt para este N y estas L (opcional)
+    # Limpiar viejos archivos para este N y estas L (opcional)
     for L in Ls:
         for old in src_dir.glob(f"pressure_L={L:.3f}_N={N}_rep*.txt"):
             try: old.unlink()
             except: pass
 
-    per_rep_rows = []  # una fila por corrida individual
+    rows = []  # una fila por corrida individual
     for L in Ls:
-        print(f"\n=== L = {L:.3f}  (reps = {args.reps}) ===")
-        for r in range(1, args.reps+1):
-            # Ejecutar Java
-            _, pr_path = run_java_once(src_dir, N, L)
-            # Copiar a nombre único
-            dst = pr_path.parent / f"pressure_L={L:.3f}_N={N}_rep{r}.txt"
+        print(f"\n=== L = {L:.3f} ===")
+        # Ejecutar Java
+        _, pr_path = run_java_once(src_dir, N, L)
+        dst = pr_path.parent / f"pressure_L={L:.3f}_N={N}.txt"
+        if os.path.abspath(str(pr_path)) != os.path.abspath(str(dst)):
             shutil.copy2(pr_path, dst)
-            print(f"[ok] {dst.name}")
-            time.sleep(0.2)  # desincronizar seeds
+        print(f"[ok] {dst.name}")
+        time.sleep(0.2)  # desincronizar seeds
 
-            # Parseo + promedio
-            try:
-                t, pL, pR = read_pressure_file(dst)
-            except Exception as e:
-                print(f"[warn] {dst.name}: {e}", file=sys.stderr)
-                continue
+        # Parseo + promedio
+        try:
+            t, pL, pR = read_pressure_file(dst)
+        except Exception as e:
+            print(f"[warn] {dst.name}: {e}", file=sys.stderr)
+            continue
 
-            if args.last_n is not None and args.last_n > 0:
-                i0 = max(0, len(t) - args.last_n)
-            else:
-                i0 = find_steady_start(t, pL, pR,
-                                       win_sec=args.steady_win,
-                                       tol_rel=args.steady_tol,
-                                       persist_sec=args.steady_persist)
-                if i0 < 0:
-                    i0 = int(max(0, len(t) - int(len(t)*args.fallback_last_frac)))
+        p_mean = 0.5*(pL + pR)
+        # SIEMPRE: pedir al usuario marcar el inicio del estacionario
+        t0_manual = interactive_steady_point(t, p_mean, name=f"L={L:.3f}")
+        i0 = np.searchsorted(t, t0_manual) if t0_manual is not None else 0
 
-            p_mean = 0.5*(pL + pR)
-            P_ss, sd_ss = steady_average(t, p_mean, i0=i0)
-            A  = Lf*(Lf + L)
-            Ainv = 1.0/A if A>0 else np.nan
-            per_rep_rows.append({
-                "L": L, "rep": r, "N": N,
-                "t0_ss": float(t[i0]),
-                "P_ss": P_ss, "sd": sd_ss,
-                "A": A, "Ainv": Ainv, "PA": P_ss*A
-            })
+        P_ss, sd_ss = steady_average(t, p_mean, i0=i0)
+        r_particle = 0.001  # ejemplo: 1 mm
 
-    if not per_rep_rows:
+        # ...dentro del loop principal...
+        A_total = Lf * (Lf + L)
+        A_eff = A_total - N * np.pi * r_particle**2
+        Ainv = 1.0/A_eff if A_eff > 0 else np.nan
+
+        rows.append({
+            "L": L, "N": N,
+            "t0_ss": float(t[i0]),
+            "P_ss": P_ss, "sd": sd_ss,
+            "A": A_eff, "Ainv": Ainv, "PA": P_ss*A_eff
+        })
+
+    if not rows:
         print("[error] No se obtuvieron datos.", file=sys.stderr)
         sys.exit(1)
 
-    # Agregado por L
-    L_to_vals: Dict[float, List[dict]] = {}
-    for row in per_rep_rows:
-        L_to_vals.setdefault(row["L"], []).append(row)
+    # --- Ajuste y salida ---
+    x = np.array([r["Ainv"] for r in rows], float)
+    y = np.array([r["P_ss"] for r in rows], float)
 
-    agg_rows = []
-    for L in sorted(L_to_vals.keys()):
-        rows = L_to_vals[L]
-        P_vals = np.array([r["P_ss"] for r in rows], float)
-        P_mean = float(np.mean(P_vals))
-        P_sd   = float(np.std(P_vals, ddof=1) if len(P_vals)>1 else 0.0)
-        P_sem  = float(P_sd/np.sqrt(len(P_vals))) if len(P_vals)>1 else 0.0
-        A  = rows[0]["A"]; Ainv = rows[0]["Ainv"]
-        agg_rows.append({
-            "L": L, "N": N, "reps": len(rows),
-            "P_mean": P_mean, "P_sd": P_sd, "P_sem": P_sem,
-            "A": A, "Ainv": Ainv, "PA_mean": P_mean*A
-        })
-
-    # Ajuste con promedios por L
-    agg_rows_sorted = sorted(agg_rows, key=lambda r: r["L"])
-    x = np.array([r["Ainv"] for r in agg_rows_sorted], float)
-    y = np.array([r["P_mean"] for r in agg_rows_sorted], float)
-
-    # (re)def local por si movés el archivo
     def fit_through_origin_local(x, y):
         x = np.asarray(x, float); y = np.asarray(y, float)
         sx2 = float(np.sum(x*x)); sxy = float(np.sum(x*y))
@@ -288,72 +290,44 @@ def main():
 
     k, se_k, R2 = fit_through_origin_local(x, y)
 
-    print("\n=== Ajuste teórico sobre promedios por L: P = k * A^{-1} ===")
+    print("\n=== Ajuste teórico sobre puntos: P = k * A^{-1} ===")
     print(f"k = {k:.6g}  (± {se_k:.6g})")
     print(f"R^2 (origen) = {R2:.5f}")
     print("Puntos usados:", len(x))
 
-    # --------- NUEVO: imprimir puntos y errores de ambos gráficos ---------
-    print("\n--- Puntos para GRÁFICO 1: P vs A^{-1} (con SEM) ---")
-    for r in agg_rows_sorted:
-        print(f"L={r['L']:.3f} | Ainv={r['Ainv']:.6g} | P={r['P_mean']:.6g} ± {r['P_sem']:.6g}")
+    print("\n--- Puntos para GRÁFICO 1: P vs A^{-1} ---")
+    for r in rows:
+        print(f"L={r['L']:.3f} | Ainv={r['Ainv']:.6g} | P={r['P_ss']:.6g} ± {r['sd']:.6g}")
 
     print("\n--- Comparación P·A vs k (usando el k del ajuste de P vs A^{-1}) ---")
-    diffs_abs = []
-    diffs_rel = []
-    for r in agg_rows_sorted:
-        PA = r["PA_mean"]
-        # error de PA (SEM propagado): A * P_sem
-        PA_sem = r["A"] * r["P_sem"]
+    for r in rows:
+        PA = r["PA"]
+        PA_sd = r["A"] * r["sd"]
         delta = PA - k
         rel = (delta / k * 100.0) if k != 0 else float("nan")
-        diffs_abs.append(abs(delta))
-        if np.isfinite(rel):
-            diffs_rel.append(abs(rel))
-        print(f"L={r['L']:.3f} | A={r['A']:.6g} | P·A={PA:.6g} ± {PA_sem:.6g} | Δ={delta:.6g} ({rel:.3g}%)")
+        print(f"L={r['L']:.3f} | A={r['A']:.6g} | P·A={PA:.6g} ± {PA_sd:.6g} | Δ={delta:.6g} ({rel:.3g}%)")
 
-    if diffs_abs:
-        mad = float(np.mean(diffs_abs))
-        maxd = float(np.max(diffs_abs))
-        if diffs_rel:
-            mrd = float(np.mean(diffs_rel))
-            maxrd = float(np.max(diffs_rel))
-            print(f"\nResumen PA vs k:  ⟨|Δ|⟩={mad:.6g}  (⟨|Δ|/k⟩={mrd:.3g}%),  max|Δ|={maxd:.6g}  (max%={maxrd:.3g}%)")
-        else:
-            print(f"\nResumen PA vs k:  ⟨|Δ|⟩={mad:.6g}  ,  max|Δ|={maxd:.6g}")
-
-    print("\n--- Puntos para GRÁFICO 2: P·A vs L (con SEM) ---")
-    for r in agg_rows_sorted:
-        PA = r["PA_mean"]
-        PA_sem = r["A"] * r["P_sem"]
-        print(f"L={r['L']:.3f} | P·A={PA:.6g} ± {PA_sem:.6g}")
-
-    # Guardar CSV (individual + agregado)
+    # Guardar CSV
     import csv
     csv_path = Path(args.csv_out)
     with csv_path.open("w", newline="", encoding="utf-8") as g:
         w = csv.writer(g)
-        w.writerow(["type","L","N","rep_or_reps","t0_ss","P_ss_or_mean","sd","sem","A","Ainv","PA_or_PAmean"])
-        for r in per_rep_rows:
-            w.writerow(["rep", f"{r['L']:.6f}", r["N"], r["rep"],
-                        f"{r['t0_ss']:.6f}", f"{r['P_ss']:.9g}", f"{r['sd']:.9g}", "",
+        w.writerow(["L","N","t0_ss","P_ss","sd","A","Ainv","PA"])
+        for r in rows:
+            w.writerow([f"{r['L']:.6f}", r["N"], f"{r['t0_ss']:.6f}", f"{r['P_ss']:.9g}", f"{r['sd']:.9g}",
                         f"{r['A']:.9g}", f"{r['Ainv']:.9g}", f"{r['PA']:.9g}"])
-        for r in agg_rows_sorted:
-            w.writerow(["agg", f"{r['L']:.6f}", r["N"], r["reps"],
-                        "", f"{r['P_mean']:.9g}", f"{r['P_sd']:.9g}", f"{r['P_sem']:.9g}",
-                        f"{r['A']:.9g}", f"{r['Ainv']:.9g}", f"{r['PA_mean']:.9g}"])
     print(f"\n[ok] CSV: {csv_path.resolve()}")
 
-    # --- Figura 1: P vs 1/A con barras de error (SEM) y recta ajustada ---
+    # --- Figura 1: P vs 1/A con barras de error (SD) y recta ajustada ---
     fig1, ax1 = plt.subplots(figsize=(7.2, 4.6))
-    yerr = np.array([r["P_sem"] for r in agg_rows_sorted], float)
-    ax1.errorbar(x, y, yerr=yerr, fmt="o", capsize=4, label="Promedios por L (± SEM)")
+    yerr = np.array([r["sd"] for r in rows], float)
+    ax1.errorbar(x, y, yerr=yerr, fmt="o", capsize=4, label="Presión (± SD estacionario)")
     xs = np.linspace(min(x), max(x), 200)
     ys = k * xs
     ax1.plot(xs, ys, label=f"Ajuste P = k·A⁻¹\nk={k:.4g} ± {se_k:.2g}\nR²={R2:.4f}")
     ax1.set_xlabel("A⁻¹ (1/m²)")
     ax1.set_ylabel("P (N/m)")
-    ax1.set_title(f"P vs A⁻¹ (N={N}, reps={len(per_rep_rows)//len(agg_rows_sorted)})")
+    ax1.set_title(f"P vs A⁻¹ (N={N})")
     ax1.grid(True, alpha=0.3)
     ax1.legend(loc="best")
     fig1.tight_layout()
@@ -362,16 +336,16 @@ def main():
     print(f"[ok] Figura: {out1.resolve()}")
 
     # --- Figura 2: P·A vs L con barras de error + línea teórica ---
-    Larr  = np.array([r["L"] for r in agg_rows_sorted], float)
-    PA    = np.array([r["PA_mean"] for r in agg_rows_sorted], float)
-    PA_sem = np.array([r["A"]*r["P_sem"] for r in agg_rows_sorted], float)
+    Larr  = np.array([r["L"] for r in rows], float)
+    PA    = np.array([r["PA"] for r in rows], float)
+    PA_sd = np.array([r["A"]*r["sd"] for r in rows], float)
     fig2, ax2 = plt.subplots(figsize=(7.2, 4.6))
-    ax2.errorbar(Larr, PA, yerr=PA_sem, fmt="o", capsize=4, label="P·A promedio (± SEM)")
+    ax2.errorbar(Larr, PA, yerr=PA_sd, fmt="o", capsize=4, label="P·A (± SD estacionario)")
     ax2.axhline(k, color="C1", lw=1.8, label="Teórico: P·A = k")
     ax2.axhspan(k - se_k, k + se_k, color="C1", alpha=0.15, label="± se(k)")
     ax2.set_xlabel("L (m)")
     ax2.set_ylabel("P·A (unid. consistentes)")
-    ax2.set_title(f"P·A vs L (N={N}, reps={len(per_rep_rows)//len(agg_rows_sorted)})")
+    ax2.set_title(f"P·A vs L (N={N})")
     ax2.grid(True, alpha=0.3)
     ax2.legend(loc="best")
     fig2.tight_layout()
@@ -383,7 +357,6 @@ def main():
         plt.show()
     else:
         plt.close(fig1); plt.close(fig2)
-
 
 if __name__ == "__main__":
     main()
