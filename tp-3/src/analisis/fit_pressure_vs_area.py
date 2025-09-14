@@ -247,17 +247,21 @@ def main():
             print(f"[warn] {dst.name}: {e}", file=sys.stderr)
             continue
 
-        p_mean = 0.5*(pL + pR)
+        # Usar presión total en vez de presión media
+        p_total = pL + pR
+
         # SIEMPRE: pedir al usuario marcar el inicio del estacionario
-        t0_manual = interactive_steady_point(t, p_mean, name=f"L={L:.3f}")
+        t0_manual = interactive_steady_point(t, p_total, name=f"L={L:.3f}")
         i0 = np.searchsorted(t, t0_manual) if t0_manual is not None else 0
 
-        P_ss, sd_ss = steady_average(t, p_mean, i0=i0)
-        r_particle = 0.001  # ejemplo: 1 mm
+        P_ss, sd_ss = steady_average(t, p_total, i0=i0)
+        r_particle = 0.0000001
 
-        # ...dentro del loop principal...
-        A_total = Lf * (Lf + L)
-        A_eff = A_total - N * np.pi * r_particle**2
+        A_left = (Lf-2*r_particle)*(Lf-2*r_particle)
+        A_right = (L-2*r_particle)*(Lf-2*r_particle)
+        A_middle = 2 * r_particle * (Lf-2*r_particle)
+        A_eff = A_left + A_right + A_middle  # área neta sin partículas
+
         Ainv = 1.0/A_eff if A_eff > 0 else np.nan
 
         rows.append({

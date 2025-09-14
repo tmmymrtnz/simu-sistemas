@@ -333,7 +333,8 @@ public final class TargetEventSim {
     private double[] sampleAndLogInterval(BufferedWriter out) throws IOException {
         double[] pi = pressure.sampleInterval(T); // [P_left_dt, P_right_dt]
         if (T > 0 && pi[0] == 0.0 && pi[1] == 0.0) return pi;
-        out.write(String.format(java.util.Locale.US, "%.9f %.9e %.9e%n", T, pi[0], pi[1]));
+        double pTotal = pi[0] + pi[1];
+        out.write(String.format(java.util.Locale.US, "%.9f %.9e %.9e %.9e%n", T, pi[0], pi[1], pTotal));
         return pi;
     }
 
