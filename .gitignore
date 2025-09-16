@@ -44,3 +44,15 @@ Thumbs.db
 *.mov
 *.mkv
 *.gif
+
+# --- Archivos de imagen ---
+*.png
+*.jpg
+*.jpeg
+*.bmp
+*.tiff
+
+# --- Archivos de output ---
+*.txt
+*.csv
+*.json
