@@ -251,7 +251,7 @@ def main():
 
     # Gráfico
     fig, ax = plt.subplots(figsize=(8, 6))
-    ax.plot(time_axis, msd_values, 'o', markersize=4, label="Datos de simulación (MSD)")
+    ax.plot(time_axis, msd_values, 'o', markersize=4, label="MSD calculado (simulación)")
     
     fit_line = slope * time_axis
     ax.plot(time_axis, fit_line, 'r-', lw=2, label=f"Ajuste lineal (D = {D:.4g} m²/s)")

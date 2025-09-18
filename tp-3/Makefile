@@ -21,11 +21,11 @@ animate:
 
 pressure_plot:
 	@echo "Plotting pressure data..."
-	python3 src/analisis/plot_pressure.py --Ns 300 --Ls 0.030 0.040 0.050 0.060 0.070 0.090 --show --use-file out/pressure_L=0.090_N=300.txt
+	python3 src/analisis/plot_pressure.py --Ns 300 --Ls 0.030 0.040 0.050 0.060 0.070 0.090 --show 
 
 pressure_fit:
 	@echo "Fitting pressure data..."
-	python3 src/analisis/fit_pressure_vs_area.py --N 100 --Ls 0.030 0.040 0.050 0.060 0.070 0.090 --show
+	python3 src/analisis/fit_pressure_vs_area.py --N 201 --Ls 0.030 0.050 0.070 0.090 --show
 
 diffusion_plot:
 	@echo "Plotting diffusion data (requires events_L=0.090_N=300.txt)..."
