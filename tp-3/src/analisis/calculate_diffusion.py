@@ -262,11 +262,11 @@ def main():
     ax.legend()
     fig.tight_layout()
 
-        out_path = Path(args.out)
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        fig.savefig(out_path, dpi=150)
-        print(f"\n[ok] Gráfico guardado en: {out_path.resolve()}")
-        plt.close(fig)
+    out_path = Path(args.out)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_path, dpi=150)
+    print(f"\n[ok] Gráfico guardado en: {out_path.resolve()}")
+    plt.close(fig)
 
 if __name__ == "__main__":
     main()
