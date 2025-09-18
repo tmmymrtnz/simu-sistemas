@@ -220,7 +220,6 @@ def animate_snapshots(snaps: List[Snapshot], L: float, out_path: Path,
     ax.set_ylim(0, L_FIXED)
     ax.set_xlabel("x (m)")
     ax.set_ylabel("y (m)")
-    ax.set_title(f"Simulación N={len(ids_sorted)}, L={L:.3f} m")
 
     # Dibujar paredes
     for (x1,y1,x2,y2) in build_walls(L):

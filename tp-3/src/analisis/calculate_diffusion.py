@@ -123,6 +123,86 @@ def calculate_msd(snaps: List[Snapshot], t_start: float) -> Tuple[np.ndarray, np
 
     return np.array(msd_times), np.array(msd_values)
 
+def interactive_plot_subset(time_axis, msd_values, main_title):
+    """
+    Plots the full data and allows the user to select a subset for a new linear fit.
+    """
+    # 1. Plot the full data
+    fig, ax = plt.subplots(figsize=(8, 6))
+    
+    # Perform initial fit for the full data and plot it
+    slope_full, _, _ = fit_through_origin(time_axis, msd_values)
+    D_full = slope_full / 4.0
+    ax.plot(time_axis, msd_values, 'o', markersize=4, label="Datos de simulación (MSD)")
+    fit_line_full = slope_full * time_axis
+    ax.plot(time_axis, fit_line_full, 'r-', lw=2, label=f"Ajuste lineal (D = {D_full:.4g} m²/s)")
+    
+    ax.set_xlabel("Tiempo (s)")
+    ax.set_ylabel("Desplazamiento Cuadrático Medio (m²)")
+    ax.set_title(f"{main_title}\n(Haz clic en 2 puntos para seleccionar un rango)")
+    ax.grid(True, alpha=0.4)
+    ax.legend()
+    fig.tight_layout()
+    plt.show(block=False)  # Show the plot but don't block the script
+    
+    # 2. Get user clicks
+    print("Por favor, haz clic en el gráfico para seleccionar los dos extremos del nuevo rango de tiempo.")
+    try:
+        points = plt.ginput(2, timeout=60, show_clicks=True)
+        if len(points) < 2:
+            print("Selección cancelada o no se hicieron suficientes clics.")
+            plt.close(fig) # Close the first figure
+            return
+    except RuntimeError:
+        print("El gráfico se cerró antes de la selección. No se generará un nuevo gráfico.")
+        plt.close(fig)
+        return
+
+    plt.close(fig) # Close the original plot
+
+    # 3. Extract x-axis range from clicks
+    t_min = min(points[0][0], points[1][0])
+    t_max = max(points[0][0], points[1][0])
+    print(f"Rango de tiempo seleccionado: [{t_min:.2f}s, {t_max:.2f}s]")
+
+    # 4. Filter the data
+    indices = np.where((time_axis >= t_min) & (time_axis <= t_max))
+    t_subset = time_axis[indices]
+    msd_subset = msd_values[indices]
+
+    if len(t_subset) < 2:
+        print("El rango seleccionado no contiene suficientes datos para realizar un ajuste.")
+        return
+
+    # 5. Perform a new fit on the subset data
+    print("Realizando nuevo ajuste lineal para el subconjunto de datos...")
+    try:
+        slope_subset, se_slope_subset, r2_subset = fit_through_origin(t_subset, msd_subset)
+        D_subset = slope_subset / 4.0
+        se_D_subset = se_slope_subset / 4.0
+    except ValueError as e:
+        print(f"[error] No se pudo realizar el ajuste para el subconjunto: {e}", file=sys.stderr)
+        return
+
+    print("\n--- Resultados del Subconjunto ---")
+    print(f"  Pendiente (k): {slope_subset:.6g} m²/s")
+    print(f"  Error estándar (SE) de k: {se_slope_subset:.6g}")
+    print(f"  R² (respecto al origen): {r2_subset:.5f}")
+    print(f"Coeficiente de Difusión (D = k/4): {D_subset:.6g} m²/s (± {se_D_subset:.2g})")
+    
+    # 6. Plot the subset
+    fig_subset, ax_subset = plt.subplots(figsize=(8, 6))
+    ax_subset.plot(t_subset, msd_subset, 'o', markersize=4, label="Datos de simulación (MSD)")
+    fit_line_subset = slope_subset * t_subset
+    ax_subset.plot(t_subset, fit_line_subset, 'r-', lw=2, label=f"Ajuste lineal (D = {D_subset:.4g} m²/s)")
+    
+    ax_subset.set_xlabel("Tiempo (s)")
+    ax_subset.set_ylabel("Desplazamiento Cuadrático Medio (m²)")
+    ax_subset.grid(True, alpha=0.4)
+    ax_subset.legend()
+    fig_subset.tight_layout()
+    plt.show() # This plot will block, keeping the window open until you close it.
+
 
 def main():
     ap = argparse.ArgumentParser(description="Calcula y grafica el coeficiente de difusión a partir de un archivo de eventos.")
@@ -151,41 +231,41 @@ def main():
         print("[error] No hay suficientes datos para realizar el ajuste.", file=sys.stderr)
         sys.exit(1)
 
-    print("Realizando ajuste lineal MSD(t) = 4Dt...")
-    slope, se_slope, r2 = fit_through_origin(time_axis, msd_values)
-    
-    D = slope / 4.0
-    se_D = se_slope / 4.0
-
-    print("\n--- Resultados ---")
-    print(f"Ajuste lineal: MSD(t) = k * t")
-    print(f"  Pendiente (k): {slope:.6g} m²/s")
-    print(f"  Error estándar (SE) de k: {se_slope:.6g}")
-    print(f"  R² (respecto al origen): {r2:.5f}")
-    print(f"Coeficiente de Difusión (D = k/4): {D:.6g} m²/s (± {se_D:.2g})")
-
-    # Gráfico
-    fig, ax = plt.subplots(figsize=(8, 6))
-    ax.plot(time_axis, msd_values, 'o', markersize=4, label="Datos de simulación (MSD)")
-    
-    fit_line = slope * time_axis
-    ax.plot(time_axis, fit_line, 'r-', lw=2, label=f"Ajuste lineal (D = {D:.4g} m²/s)")
-    
-    ax.set_xlabel("Tiempo (s)")
-    ax.set_ylabel("Desplazamiento Cuadrático Medio (m²)")
-    ax.set_title(f"Análisis de Difusión (N={len(snaps[0].state)}, L={re.search(r'L=([0-9.]+)', events_path.name).group(1) if re.search(r'L=([0-9.]+)', events_path.name) else '?'})")
-    ax.grid(True, alpha=0.4)
-    ax.legend()
-    fig.tight_layout()
-
-    out_path = Path(args.out)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(out_path, dpi=150)
-    print(f"\n[ok] Gráfico guardado en: {out_path.resolve()}")
-
     if args.show:
-        plt.show()
+        # Run the interactive plotting mode
+        interactive_plot_subset(time_axis, msd_values, events_path.name)
     else:
+        # Run the non-interactive plotting and saving mode
+        print("Realizando ajuste lineal MSD(t) = 4Dt...")
+        slope, se_slope, r2 = fit_through_origin(time_axis, msd_values)
+        
+        D = slope / 4.0
+        se_D = se_slope / 4.0
+
+        print("\n--- Resultados ---")
+        print(f"Ajuste lineal: MSD(t) = k * t")
+        print(f"  Pendiente (k): {slope:.6g} m²/s")
+        print(f"  Error estándar (SE) de k: {se_slope:.6g}")
+        print(f"  R² (respecto al origen): {r2:.5f}")
+        print(f"Coeficiente de Difusión (D = k/4): {D:.6g} m²/s (± {se_D:.2g})")
+
+        # Gráfico
+        fig, ax = plt.subplots(figsize=(8, 6))
+        ax.plot(time_axis, msd_values, 'o', markersize=4, label="Datos de simulación (MSD)")
+        
+        fit_line = slope * time_axis
+        ax.plot(time_axis, fit_line, 'r-', lw=2, label=f"Ajuste lineal (D = {D:.4g} m²/s)")
+        
+        ax.set_xlabel("Tiempo (s)")
+        ax.set_ylabel("Desplazamiento Cuadrático Medio (m²)")
+        ax.grid(True, alpha=0.4)
+        ax.legend()
+        fig.tight_layout()
+
+        out_path = Path(args.out)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(out_path, dpi=150)
+        print(f"\n[ok] Gráfico guardado en: {out_path.resolve()}")
         plt.close(fig)
 
 if __name__ == "__main__":

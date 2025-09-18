@@ -223,7 +223,6 @@ def main():
 
     ax.set_xlabel("t (s)")
     ax.set_ylabel("Presión (N/m)")
-    ax.set_title("Presión por recinto vs tiempo (múltiples N, L)")
     ax.grid(True, alpha=0.3)
     ax.legend(loc="best", fontsize=9)
     fig.tight_layout()
