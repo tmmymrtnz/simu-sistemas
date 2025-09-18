@@ -105,7 +105,6 @@ def interactive_steady_point(t, p_mean, name=""):
     ax.plot(t, p_mean, label="Presión media")
     ax.set_xlabel("Tiempo (s)")
     ax.set_ylabel("Presión (N/m)")
-    ax.set_title(f"{name}\nHaz click para marcar el inicio del estacionario")
     ax.legend()
     steady_idx = []
 
