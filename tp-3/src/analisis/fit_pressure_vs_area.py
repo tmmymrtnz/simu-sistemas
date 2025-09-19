@@ -72,9 +72,9 @@ def run_java_once(src_dir: Path, N: int, L: float) -> Tuple[Path, Path]:
 
 # ----------------- Lectura presión & helpers -----------------
 
-def read_pressure_file(path: Path) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Lee archivo: t  P_left  P_right -> (t, P_left, P_right)."""
-    t, p1, p2 = [], [], []
+def read_pressure_file(path: Path) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Lee archivo: t  P_left  P_right  P_total -> (t, P_left, P_right, P_total)."""
+    t, p1, p2, p_tot = [], [], [], []
     with path.open("r", encoding="utf-8") as f:
         for line in f:
             s = line.strip()
@@ -85,16 +85,21 @@ def read_pressure_file(path: Path) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
                 continue
             try:
                 ti = float(parts[0]); p1i = float(parts[1]); p2i = float(parts[2])
+                if len(parts) >= 4:
+                    pti = float(parts[3])
+                else:
+                    pti = p1i + p2i
             except ValueError:
                 continue
-            t.append(ti); p1.append(p1i); p2.append(p2i)
+            t.append(ti); p1.append(p1i); p2.append(p2i); p_tot.append(pti)
     if not t:
         raise ValueError(f"Archivo vacío: {path}")
     t = np.asarray(t, float)
     p1 = np.asarray(p1, float)
     p2 = np.asarray(p2, float)
+    p_tot = np.asarray(p_tot, float)
     idx = np.argsort(t)
-    return t[idx], p1[idx], p2[idx]
+    return t[idx], p1[idx], p2[idx], p_tot[idx]
 
 
 # ...existing imports...
@@ -105,7 +110,6 @@ def interactive_steady_point(t, p_mean, name=""):
     ax.plot(t, p_mean, label="Presión media")
     ax.set_xlabel("Tiempo (s)")
     ax.set_ylabel("Presión (N/m)")
-    ax.set_title(f"{name}\nHaz click para marcar el inicio del estacionario")
     ax.legend()
     steady_idx = []
 
@@ -196,6 +200,28 @@ def fit_through_origin(x: np.ndarray, y: np.ndarray) -> Tuple[float, float, floa
     R2 = 1.0 - (sse/sst0 if sst0>0 else np.nan)
     return k, se_k, R2
 
+def fit_with_intercept(x: np.ndarray, y: np.ndarray) -> Tuple[float, float, float, float, float]:
+    """
+    Ajuste P = k x + b (con intercepto).
+    Devuelve (k, se_k, b, se_b, R2).
+    """
+    x = np.asarray(x, float)
+    y = np.asarray(y, float)
+    if len(x) < 2: raise ValueError("Se requieren ≥ 2 puntos")
+    A = np.vstack([x, np.ones_like(x)]).T
+    res = np.linalg.lstsq(A, y, rcond=None)
+    k, b = res[0]
+    resid = y - (k*x + b)
+    sse = float(np.sum(resid**2))
+    dof = max(1, len(x)-2)
+    sigma2 = sse/dof
+    sx2 = float(np.sum((x-np.mean(x))**2))
+    se_k = float(np.sqrt(sigma2/sx2)) if sx2 > 0 else float('nan')
+    se_b = float(np.sqrt(sigma2 * (1.0/len(x) + np.mean(x)**2/sx2)) if sx2 > 0 else float('nan'))
+    sst = float(np.sum((y-np.mean(y))**2))
+    R2 = 1.0 - (sse/sst if sst>0 else np.nan)
+    return k, se_k, b, se_b, R2
+
 # ----------------- Lógica principal -----------------
 
 def main():
@@ -242,13 +268,13 @@ def main():
 
         # Parseo + promedio
         try:
-            t, pL, pR = read_pressure_file(dst)
+            t, pL, pR, p_total_series = read_pressure_file(dst)
         except Exception as e:
             print(f"[warn] {dst.name}: {e}", file=sys.stderr)
             continue
 
-        # Usar presión total en vez de presión media
-        p_total = pL + pR
+        # Usar la presión total registrada en el archivo (columna 4)
+        p_total = p_total_series
 
         # SIEMPRE: pedir al usuario marcar el inicio del estacionario
         t0_manual = interactive_steady_point(t, p_total, name=f"L={L:.3f}")
@@ -279,24 +305,12 @@ def main():
     x = np.array([r["Ainv"] for r in rows], float)
     y = np.array([r["P_ss"] for r in rows], float)
 
-    def fit_through_origin_local(x, y):
-        x = np.asarray(x, float); y = np.asarray(y, float)
-        sx2 = float(np.sum(x*x)); sxy = float(np.sum(x*y))
-        k = sxy/sx2
-        resid = y - k*x
-        sse = float(np.sum(resid*resid))
-        dof = max(1, len(x)-1)
-        sigma2 = sse/dof
-        se_k = float(np.sqrt(sigma2/sx2))
-        sst0 = float(np.sum(y*y))
-        R2 = 1.0 - (sse/sst0 if sst0>0 else np.nan)
-        return k, se_k, R2
+    k, se_k, b, se_b, R2 = fit_with_intercept(x, y)
 
-    k, se_k, R2 = fit_through_origin_local(x, y)
-
-    print("\n=== Ajuste teórico sobre puntos: P = k * A^{-1} ===")
+    print("\n=== Ajuste teórico sobre puntos: P = k * A^{-1} + b ===")
     print(f"k = {k:.6g}  (± {se_k:.6g})")
-    print(f"R^2 (origen) = {R2:.5f}")
+    print(f"b = {b:.6g}  (± {se_b:.6g})")
+    print(f"R^2 = {R2:.5f}")
     print("Puntos usados:", len(x))
 
     print("\n--- Puntos para GRÁFICO 1: P vs A^{-1} ---")
@@ -325,35 +339,34 @@ def main():
     # --- Figura 1: P vs 1/A con barras de error (SD) y recta ajustada ---
     fig1, ax1 = plt.subplots(figsize=(7.2, 4.6))
     yerr = np.array([r["sd"] for r in rows], float)
-    ax1.errorbar(x, y, yerr=yerr, fmt="o", capsize=4, label="Presión (± SD estacionario)")
+    ax1.errorbar(x, y, yerr=yerr, fmt="o", capsize=4)
     xs = np.linspace(min(x), max(x), 200)
-    ys = k * xs
-    ax1.plot(xs, ys, label=f"Ajuste P = k·A⁻¹\nk={k:.4g} ± {se_k:.2g}\nR²={R2:.4f}")
+    ys = k * xs + b
+    ax1.plot(xs, ys)
     ax1.set_xlabel("A⁻¹ (1/m²)")
-    ax1.set_ylabel("P (N/m)")
+    ax1.set_ylabel("Presion (N/m)")
     ax1.grid(True, alpha=0.3)
-    ax1.legend(loc="best")
     fig1.tight_layout()
     out1 = Path(args.plot_out)
     fig1.savefig(out1, dpi=140)
-    print(f"[ok] Figura: {out1.resolve()}")
+    print(f"Ajuste: P = {k:.4g} * A⁻¹ + {b:.4g}")
 
-    # --- Figura 2: P·A vs L con barras de error + línea teórica ---
-    Larr  = np.array([r["L"] for r in rows], float)
-    PA    = np.array([r["PA"] for r in rows], float)
-    PA_sd = np.array([r["A"]*r["sd"] for r in rows], float)
-    fig2, ax2 = plt.subplots(figsize=(7.2, 4.6))
-    ax2.errorbar(Larr, PA, yerr=PA_sd, fmt="o", capsize=4, label="P·A (± SD estacionario)")
-    ax2.axhline(k, color="C1", lw=1.8, label="Teórico: P·A = k")
-    ax2.axhspan(k - se_k, k + se_k, color="C1", alpha=0.15, label="± se(k)")
-    ax2.set_xlabel("L (m)")
-    ax2.set_ylabel("P·A (unid. consistentes)")
-    ax2.grid(True, alpha=0.3)
-    ax2.legend(loc="best")
-    fig2.tight_layout()
-    out2 = Path(args.plot2_out)
-    fig2.savefig(out2, dpi=140)
-    print(f"[ok] Figura: {out2.resolve()}")
+    # # --- Figura 2: P·A vs L con barras de error + línea teórica ---
+    # Larr  = np.array([r["L"] for r in rows], float)
+    # PA    = np.array([r["PA"] for r in rows], float)
+    # PA_sd = np.array([r["A"]*r["sd"] for r in rows], float)
+    # fig2, ax2 = plt.subplots(figsize=(7.2, 4.6))
+    # ax2.errorbar(Larr, PA, yerr=PA_sd, fmt="o", capsize=4, label="P·A (± SD estacionario)")
+    # ax2.axhline(k, color="C1", lw=1.8, label="Teórico: P·A = k (sin intercepto)")
+    # ax2.axhspan(k - se_k, k + se_k, color="C1", alpha=0.15, label="± se(k)")
+    # ax2.set_xlabel("L (m)")
+    # ax2.set_ylabel("P·A (unid. consistentes)")
+    # ax2.grid(True, alpha=0.3)
+    # ax2.legend(loc="best")
+    # fig2.tight_layout()
+    # out2 = Path(args.plot2_out)
+    # fig2.savefig(out2, dpi=140)
+    # print(f"[ok] Figura: {out2.resolve()}")
 
     if args.show:
         plt.show()

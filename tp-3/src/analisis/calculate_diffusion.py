@@ -249,24 +249,24 @@ def main():
         print(f"  R² (respecto al origen): {r2:.5f}")
         print(f"Coeficiente de Difusión (D = k/4): {D:.6g} m²/s (± {se_D:.2g})")
 
-        # Gráfico
-        fig, ax = plt.subplots(figsize=(8, 6))
-        ax.plot(time_axis, msd_values, 'o', markersize=4, label="Datos de simulación (MSD)")
-        
-        fit_line = slope * time_axis
-        ax.plot(time_axis, fit_line, 'r-', lw=2, label=f"Ajuste lineal (D = {D:.4g} m²/s)")
-        
-        ax.set_xlabel("Tiempo (s)")
-        ax.set_ylabel("Desplazamiento Cuadrático Medio (m²)")
-        ax.grid(True, alpha=0.4)
-        ax.legend()
-        fig.tight_layout()
+    # Gráfico
+    fig, ax = plt.subplots(figsize=(8, 6))
+    ax.plot(time_axis, msd_values, 'o', markersize=4, label="MSD calculado (simulación)")
+    
+    fit_line = slope * time_axis
+    ax.plot(time_axis, fit_line, 'r-', lw=2, label=f"Ajuste lineal (D = {D:.4g} m²/s)")
+    
+    ax.set_xlabel("Tiempo (s)")
+    ax.set_ylabel("Desplazamiento Cuadrático Medio (m²)")
+    ax.grid(True, alpha=0.4)
+    ax.legend()
+    fig.tight_layout()
 
-        out_path = Path(args.out)
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        fig.savefig(out_path, dpi=150)
-        print(f"\n[ok] Gráfico guardado en: {out_path.resolve()}")
-        plt.close(fig)
+    out_path = Path(args.out)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_path, dpi=150)
+    print(f"\n[ok] Gráfico guardado en: {out_path.resolve()}")
+    plt.close(fig)
 
 if __name__ == "__main__":
     main()
