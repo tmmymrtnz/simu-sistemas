@@ -124,7 +124,7 @@ def interactive_plot_subset(snaps: List[Snapshot], main_title: str):
 
     fig, ax = plt.subplots(figsize=(8, 6))
     
-    ax.plot(full_absolute_times, full_msd_values, 'o', markersize=4, label="Datos de simulación (MSD)")
+    ax.plot(full_absolute_times, full_msd_values, 'o', markersize=4)
     
     ax.set_xlabel("Tiempo (s)")
     ax.set_ylabel("Desplazamiento Cuadrático Medio (m²)")
@@ -182,9 +182,9 @@ def interactive_plot_subset(snaps: List[Snapshot], main_title: str):
     
     # 5. Plot the subset
     fig_subset, ax_subset = plt.subplots(figsize=(8, 6))
-    ax_subset.plot(selected_absolute_times, selected_msd_values, 'o', markersize=4, label="Datos de simulación (MSD)")
+    ax_subset.plot(selected_absolute_times, selected_msd_values, 'o', markersize=4, label="Datos de simulación")
     fit_line_subset = slope_subset * (selected_absolute_times - selected_absolute_times[0]) + selected_msd_values[0]
-    ax_subset.plot(selected_absolute_times, fit_line_subset, 'r-', lw=2, label=f"Ajuste lineal (D = {D_subset:.4g} m²/s)")
+    ax_subset.plot(selected_absolute_times, fit_line_subset, 'r-', lw=2, label=f"Ajuste lineal")
     
     ax_subset.set_xlabel("Tiempo (s)")
     ax_subset.set_ylabel("Desplazamiento Cuadrático Medio (m²)")

@@ -109,7 +109,7 @@ def interactive_steady_point(t, p_mean, name=""):
     fig, ax = plt.subplots()
     ax.plot(t, p_mean, label="Presión media")
     ax.set_xlabel("Tiempo (s)")
-    ax.set_ylabel("Presión  (N/m²)")
+    ax.set_ylabel("Presión  (N/m)")
     ax.legend()
     steady_idx = []
 
@@ -344,7 +344,7 @@ def main():
     ys = k * xs + b
     ax1.plot(xs, ys)
     ax1.set_xlabel("A⁻¹ (1/m²)")
-    ax1.set_ylabel("Presion (N/m²)")
+    ax1.set_ylabel("Presion (N/m)")
     ax1.grid(True, alpha=0.3)
     fig1.tight_layout()
     out1 = Path(args.plot_out)
