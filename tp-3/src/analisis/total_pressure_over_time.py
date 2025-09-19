@@ -46,11 +46,9 @@ def main():
 
         # Extract the necessary columns
         time = data['t']
-        p_left = data['P_left']
-        p_right = data['P_right']
 
         # Calculate total pressure from the two pressure columns
-        total_pressure = p_left + p_right
+        total_pressure = data['P_total_from_file'] 
         
         # Get the filename for the plot label
         file_name = os.path.basename(input_file)
@@ -58,7 +56,10 @@ def main():
         # Use regex to extract the L and N values from the filename
         match = re.search(r'L=(.+)_N=(\d+)', file_name)
         if match:
-            legend_label = f'L = {match.group(1)}'
+            L_value = match.group(1)
+            if L_value.endswith('0'):
+                L_value = L_value[:-1]
+            legend_label = f'L = {L_value}'
         else:
             legend_label = file_name
         
@@ -66,7 +67,7 @@ def main():
         plt.plot(time, total_pressure, label=legend_label, linewidth=2)
 
     plt.xlabel("Tiempo (s)", fontsize=12)
-    plt.ylabel("Presion Total", fontsize=12)
+    plt.ylabel("Presion Total (N/m)", fontsize=12)
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
