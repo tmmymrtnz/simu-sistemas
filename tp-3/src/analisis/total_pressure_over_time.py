@@ -58,15 +58,15 @@ def main():
         # Use regex to extract the L and N values from the filename
         match = re.search(r'L=(.+)_N=(\d+)', file_name)
         if match:
-            legend_label = f'L={match.group(1)} N={match.group(2)}'
+            legend_label = f'L = {match.group(1)}'
         else:
             legend_label = file_name
         
         # Plot the data
         plt.plot(time, total_pressure, label=legend_label, linewidth=2)
 
-    plt.xlabel("Time (s)", fontsize=12)
-    plt.ylabel("Total Pressure (Pa)", fontsize=12)
+    plt.xlabel("Tiempo (s)", fontsize=12)
+    plt.ylabel("Presion Total", fontsize=12)
     plt.legend()
     plt.grid(True)
     plt.tight_layout()

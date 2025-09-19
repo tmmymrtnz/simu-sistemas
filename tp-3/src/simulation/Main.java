@@ -15,7 +15,7 @@ public class Main {
     }
 
     public static void main(String[] args) throws Exception {
-        int N = 300;
+        int N = 201;
         double L = 0.05;
 
         if (args.length >= 2) {

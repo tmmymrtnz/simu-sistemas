@@ -17,5 +17,5 @@ public final class Constants {
     public static final double MIN_MEAN_PRESSURE = 1e-8; // ajustable
 
     /** Δt fijo del muestreo de presión (seg). */
-    public static final double PRESSURE_SAMPLE_DT = 5.0; 
+    public static final double PRESSURE_SAMPLE_DT = 10.0; 
 }

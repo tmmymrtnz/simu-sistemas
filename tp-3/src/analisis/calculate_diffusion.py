@@ -86,28 +86,20 @@ def fit_through_origin(x: np.ndarray, y: np.ndarray) -> Tuple[float, float, floa
     R2 = 1.0 - (sse/sst0 if sst0 > 0 else np.nan)
     return k, se_k, R2
 
-def calculate_msd(snaps: List[Snapshot], t_start: float) -> Tuple[np.ndarray, np.ndarray]:
-    """Calcula el MSD a partir de t_start."""
+def calculate_msd_absolute(snaps: List[Snapshot]) -> Tuple[np.ndarray, np.ndarray]:
+    """Calcula el MSD para toda la simulación desde el inicio."""
+    if not snaps:
+        return np.array([]), np.array([])
     
-    # Encontrar el snapshot inicial (o el más cercano a t_start)
-    times = np.array([s.t for s in snaps])
-    start_idx = np.searchsorted(times, t_start, side='left')
-    if start_idx >= len(snaps):
-        raise ValueError(f"t_start={t_start}s está más allá del final de la simulación ({times[-1]:.2f}s).")
-
-    initial_snap = snaps[start_idx]
+    initial_snap = snaps[0]
     t0 = initial_snap.t
     initial_pos = {pid: (s[0], s[1]) for pid, s in initial_snap.state.items()}
     particle_ids = sorted(initial_pos.keys())
-    N = len(particle_ids)
 
-    msd_times = []
+    absolute_times = []
     msd_values = []
 
-    for i in range(start_idx, len(snaps)):
-        current_snap = snaps[i]
-        if current_snap.t < t0: continue
-
+    for current_snap in snaps:
         sq_displacements = []
         for pid in particle_ids:
             if pid in current_snap.state and pid in initial_pos:
@@ -118,24 +110,21 @@ def calculate_msd(snaps: List[Snapshot], t_start: float) -> Tuple[np.ndarray, np
         
         if sq_displacements:
             msd = np.mean(sq_displacements)
-            msd_times.append(current_snap.t - t0)
+            absolute_times.append(current_snap.t)
             msd_values.append(msd)
 
-    return np.array(msd_times), np.array(msd_values)
+    return np.array(absolute_times), np.array(msd_values)
 
-def interactive_plot_subset(time_axis, msd_values, main_title):
+def interactive_plot_subset(snaps: List[Snapshot], main_title: str):
     """
     Plots the full data and allows the user to select a subset for a new linear fit.
     """
-    # 1. Plot the full data
+    # 1. First, calculate and plot the full MSD from t=0.0
+    full_absolute_times, full_msd_values = calculate_msd_absolute(snaps)
+
     fig, ax = plt.subplots(figsize=(8, 6))
     
-    # Perform initial fit for the full data and plot it
-    slope_full, _, _ = fit_through_origin(time_axis, msd_values)
-    D_full = slope_full / 4.0
-    ax.plot(time_axis, msd_values, 'o', markersize=4, label="Datos de simulación (MSD)")
-    fit_line_full = slope_full * time_axis
-    ax.plot(time_axis, fit_line_full, 'r-', lw=2, label=f"Ajuste lineal (D = {D_full:.4g} m²/s)")
+    ax.plot(full_absolute_times, full_msd_values, 'o', markersize=4, label="Datos de simulación (MSD)")
     
     ax.set_xlabel("Tiempo (s)")
     ax.set_ylabel("Desplazamiento Cuadrático Medio (m²)")
@@ -160,24 +149,25 @@ def interactive_plot_subset(time_axis, msd_values, main_title):
 
     plt.close(fig) # Close the original plot
 
-    # 3. Extract x-axis range from clicks
+    # 3. Extract x-axis range from clicks and filter the pre-calculated data
     t_min = min(points[0][0], points[1][0])
     t_max = max(points[0][0], points[1][0])
     print(f"Rango de tiempo seleccionado: [{t_min:.2f}s, {t_max:.2f}s]")
-
-    # 4. Filter the data
-    indices = np.where((time_axis >= t_min) & (time_axis <= t_max))
-    t_subset = time_axis[indices]
-    msd_subset = msd_values[indices]
-
-    if len(t_subset) < 2:
+    
+    indices = np.where((full_absolute_times >= t_min) & (full_absolute_times <= t_max))
+    
+    selected_absolute_times = full_absolute_times[indices]
+    selected_msd_values = full_msd_values[indices]
+    selected_relative_times = selected_absolute_times - selected_absolute_times[0]
+        
+    if len(selected_relative_times) < 2:
         print("El rango seleccionado no contiene suficientes datos para realizar un ajuste.")
         return
 
-    # 5. Perform a new fit on the subset data
+    # 4. Perform a new fit on the subset data
     print("Realizando nuevo ajuste lineal para el subconjunto de datos...")
     try:
-        slope_subset, se_slope_subset, r2_subset = fit_through_origin(t_subset, msd_subset)
+        slope_subset, se_slope_subset, r2_subset = fit_through_origin(selected_relative_times, selected_msd_values - selected_msd_values[0])
         D_subset = slope_subset / 4.0
         se_D_subset = se_slope_subset / 4.0
     except ValueError as e:
@@ -190,14 +180,15 @@ def interactive_plot_subset(time_axis, msd_values, main_title):
     print(f"  R² (respecto al origen): {r2_subset:.5f}")
     print(f"Coeficiente de Difusión (D = k/4): {D_subset:.6g} m²/s (± {se_D_subset:.2g})")
     
-    # 6. Plot the subset
+    # 5. Plot the subset
     fig_subset, ax_subset = plt.subplots(figsize=(8, 6))
-    ax_subset.plot(t_subset, msd_subset, 'o', markersize=4, label="Datos de simulación (MSD)")
-    fit_line_subset = slope_subset * t_subset
-    ax_subset.plot(t_subset, fit_line_subset, 'r-', lw=2, label=f"Ajuste lineal (D = {D_subset:.4g} m²/s)")
+    ax_subset.plot(selected_absolute_times, selected_msd_values, 'o', markersize=4, label="Datos de simulación (MSD)")
+    fit_line_subset = slope_subset * (selected_absolute_times - selected_absolute_times[0]) + selected_msd_values[0]
+    ax_subset.plot(selected_absolute_times, fit_line_subset, 'r-', lw=2, label=f"Ajuste lineal (D = {D_subset:.4g} m²/s)")
     
     ax_subset.set_xlabel("Tiempo (s)")
     ax_subset.set_ylabel("Desplazamiento Cuadrático Medio (m²)")
+    ax_subset.set_title(f"Ajuste para el rango [{t_min:.2f}s, {t_max:.2f}s]")
     ax_subset.grid(True, alpha=0.4)
     ax_subset.legend()
     fig_subset.tight_layout()
@@ -220,24 +211,27 @@ def main():
     print(f"Parseando {events_path.name}...")
     snaps = parse_events_file(events_path)
     
-    print(f"Calculando MSD a partir de t={args.t_start:.2f}s...")
-    try:
-        time_axis, msd_values = calculate_msd(snaps, args.t_start)
-    except ValueError as e:
-        print(f"[error] {e}", file=sys.stderr)
-        sys.exit(1)
-
-    if len(time_axis) < 2:
-        print("[error] No hay suficientes datos para realizar el ajuste.", file=sys.stderr)
-        sys.exit(1)
-
     if args.show:
         # Run the interactive plotting mode
-        interactive_plot_subset(time_axis, msd_values, events_path.name)
+        interactive_plot_subset(snaps, events_path.name)
     else:
         # Run the non-interactive plotting and saving mode
+        print(f"Calculando MSD a partir de t={args.t_start:.2f}s...")
+        full_absolute_times, full_msd_values = calculate_msd_absolute(snaps)
+        
+        # Filter data based on --t-start parameter
+        indices = np.where(full_absolute_times >= args.t_start)
+        absolute_times = full_absolute_times[indices]
+        msd_values = full_msd_values[indices]
+        relative_times = absolute_times - absolute_times[0]
+
+        if len(relative_times) < 2:
+            print("[error] No hay suficientes datos para realizar el ajuste.", file=sys.stderr)
+            sys.exit(1)
+
         print("Realizando ajuste lineal MSD(t) = 4Dt...")
-        slope, se_slope, r2 = fit_through_origin(time_axis, msd_values)
+        # Fit through origin on the shifted data
+        slope, se_slope, r2 = fit_through_origin(relative_times, msd_values - msd_values[0])
         
         D = slope / 4.0
         se_D = se_slope / 4.0
@@ -249,24 +243,25 @@ def main():
         print(f"  R² (respecto al origen): {r2:.5f}")
         print(f"Coeficiente de Difusión (D = k/4): {D:.6g} m²/s (± {se_D:.2g})")
 
-    # Gráfico
-    fig, ax = plt.subplots(figsize=(8, 6))
-    ax.plot(time_axis, msd_values, 'o', markersize=4, label="MSD calculado (simulación)")
-    
-    fit_line = slope * time_axis
-    ax.plot(time_axis, fit_line, 'r-', lw=2, label=f"Ajuste lineal (D = {D:.4g} m²/s)")
-    
-    ax.set_xlabel("Tiempo (s)")
-    ax.set_ylabel("Desplazamiento Cuadrático Medio (m²)")
-    ax.grid(True, alpha=0.4)
-    ax.legend()
-    fig.tight_layout()
+        # Gráfico
+        fig, ax = plt.subplots(figsize=(8, 6))
+        ax.plot(absolute_times, msd_values, 'o', markersize=4, label="MSD calculado (simulación)")
+        
+        # Plot the fit line
+        fit_line = slope * relative_times + msd_values[0]
+        ax.plot(absolute_times, fit_line, 'r-', lw=2, label=f"Ajuste lineal (D = {D:.4g} m²/s)")
+        
+        ax.set_xlabel("Tiempo (s)")
+        ax.set_ylabel("Desplazamiento Cuadrático Medio (m²)")
+        ax.grid(True, alpha=0.4)
+        ax.legend()
+        fig.tight_layout()
 
-    out_path = Path(args.out)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(out_path, dpi=150)
-    print(f"\n[ok] Gráfico guardado en: {out_path.resolve()}")
-    plt.close(fig)
+        out_path = Path(args.out)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(out_path, dpi=150)
+        print(f"\n[ok] Gráfico guardado en: {out_path.resolve()}")
+        plt.close(fig)
 
 if __name__ == "__main__":
     main()

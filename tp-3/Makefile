@@ -13,27 +13,27 @@ compile:
 
 run: compile
 	@echo "Running Java simulation..."
-	$(JAVA) -cp src/out simulation.Main 300 0.09 # Example N=200, L=0.09
+	$(JAVA) -cp src/out simulation.Main 201 0.09 
 
 animate:
 	@echo "Animating simulation..."
-	python3 src/analisis/animate_sim.py --N 200 --L 0.03 --fps 100 --use-file out/events_L=0.090_N=200.txt 
+	python3 src/analisis/animate_sim.py --N 201 --L 0.03 --fps 100 --use-file out/events_L=0.090_N=201.txt 
 
 total_pressure_plot:
 	@echo "Plotting total pressure over time..."
-	python3 src/analisis/total_pressure_over_time.py --use-files out/pressure_L=0.030_N=300.txt out/pressure_L=0.090_N=300.txt --show
+	python3 src/analisis/total_pressure_over_time.py --use-files out/pressure_L=0.030_N=201.txt out/pressure_L=0.090_N=201.txt --show
 
 pressure_plot:
 	@echo "Plotting pressure data..."
-	python3 src/analisis/plot_pressure.py --Ns 300 --Ls 0.030 0.040 0.050 0.060 0.070 0.090 --show 
+	python3 src/analisis/plot_pressure.py --Ns 201 --Ls 0.090 --show --use-file out/pressure_L=0.090_N=201.txt
 
 pressure_fit:
 	@echo "Fitting pressure data..."
 	python3 src/analisis/fit_pressure_vs_area.py --N 201 --Ls 0.030 0.050 0.070 0.090 --show
 
 diffusion_plot:
-	@echo "Plotting diffusion data (requires events_L=0.090_N=300.txt)..."
-	python3 src/analisis/calculate_diffusion.py --file out/events_L=0.090_N=300.txt --show --t-start 200.0
+	@echo "Plotting diffusion data (requires events_L=0.090_N=201.txt)..."
+	python3 src/analisis/calculate_diffusion.py --file out/events_L=0.090_N=201.txt --show --t-start 0.0
 
 clean:
 	@echo "Cleaning generated files..."

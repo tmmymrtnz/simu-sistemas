@@ -193,8 +193,8 @@ def main():
         pR_s = moving_average(pR, args.moving_avg)
 
         Ltag, Ntag = infer_LN_from_name(p.name)
-        labelL = f"P_left (L={Ltag}, N={Ntag})" if (Ltag and Ntag) else f"P_left [{p.name}]"
-        labelR = f"P_right (L={Ltag}, N={Ntag})" if (Ltag and Ntag) else f"P_right [{p.name}]"
+        labelL = f"Presion Recinto Izquierdo" if (Ltag and Ntag) else f"Presion Recinto Izquierdo [{p.name}]"
+        labelR = f"Presion Recinto Derecho" if (Ltag and Ntag) else f"Presion Recinto Derecho [{p.name}]"
 
         ax.plot(t, pL_s, label=labelL)
         ax.plot(t, pR_s, label=labelR)
@@ -221,8 +221,8 @@ def main():
         print("[error] No se pudo graficar: no hay datos válidos.", file=sys.stderr)
         sys.exit(1)
 
-    ax.set_xlabel("t (s)")
-    ax.set_ylabel("Presión (N/m)")
+    ax.set_xlabel("Tiempo (s)")
+    ax.set_ylabel("Presión (N/m²)")
     ax.grid(True, alpha=0.3)
     ax.legend(loc="best", fontsize=9)
     fig.tight_layout()
