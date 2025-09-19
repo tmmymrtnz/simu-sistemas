@@ -19,6 +19,10 @@ animate:
 	@echo "Animating simulation..."
 	python3 src/analisis/animate_sim.py --N 200 --L 0.03 --fps 100 --use-file out/events_L=0.090_N=200.txt 
 
+total_pressure_plot:
+	@echo "Plotting total pressure over time..."
+	python3 src/analisis/total_pressure_over_time.py --use-files out/pressure_L=0.030_N=300.txt out/pressure_L=0.090_N=300.txt --show
+
 pressure_plot:
 	@echo "Plotting pressure data..."
 	python3 src/analisis/plot_pressure.py --Ns 300 --Ls 0.030 0.040 0.050 0.060 0.070 0.090 --show --use-file out/pressure_L=0.090_N=300.txt
