@@ -4,7 +4,7 @@ public class GearFifthOrder implements  NumericMethod{
 
 
     @Override
-    public Double solve(Double x0, Double v0, Double t, Double dt) {
-        return 0.0;
+    public State solve(Double x0, Double v0, Double t, Double dt) {
+        return new State(x0,v0);
     }
 }
