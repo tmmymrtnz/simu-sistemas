@@ -18,7 +18,7 @@ run: compile
 
 analysis:
 	@echo "Running analysis scripts..."
-	python3 src/analisis/analyze.py 
+	python3 src/analisis/oscilator.py
 
 clean:
 	@echo "Cleaning up..."
