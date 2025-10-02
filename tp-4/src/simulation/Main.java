@@ -35,8 +35,7 @@ public class Main {
         );
 
 
-
-        try (PrintWriter pw = new PrintWriter("tp-4/out.txt")) {
+        try (PrintWriter pw = new PrintWriter("out.txt")) {
             pw.println("#t\tBeeman\tVerlet\tRealValue\tGear");
             while (t<tf){
                 State BeemanState = beeman.solve(x0,v0,t,dt);
