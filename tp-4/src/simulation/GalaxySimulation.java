@@ -37,14 +37,17 @@ public class GalaxySimulation {
         this.description = description;
     }
 
-    public void run(Path energyPath) throws IOException {
+    public void run(Path energyPath, Path particlesPath) throws IOException {
         Files.createDirectories(energyPath.getParent());
+        Files.createDirectories(particlesPath.getParent());
 
         double time = 0.0;
         double nextOutputTime = snapshotInterval > 0.0 ? snapshotInterval : dt;
         boolean outputEveryStep = snapshotInterval <= 0.0;
 
-        try (PrintWriter energyWriter = new PrintWriter(Files.newBufferedWriter(energyPath))) {
+        try (PrintWriter energyWriter = new PrintWriter(Files.newBufferedWriter(energyPath));
+            PrintWriter particlesWriter = new PrintWriter(Files.newBufferedWriter(particlesPath))) {
+            
             if (description != null && !description.isBlank()) {
                 energyWriter.println(description);
             }
@@ -52,6 +55,7 @@ public class GalaxySimulation {
             energyWriter.println("# columns: t\ttotal_energy\tr_hm");
 
             writeEnergyRow(energyWriter, time);
+            writeParticlesToFile(particlesWriter, time);
 
             while (time < tf) {
                 integrator.step(particles, dt, softeningLength);
@@ -59,6 +63,7 @@ public class GalaxySimulation {
 
                 if (outputEveryStep || time + 1e-12 >= nextOutputTime) {
                     writeEnergyRow(energyWriter, time);
+                    writeParticlesToFile(particlesWriter, time);
                     if (!outputEveryStep) {
                         nextOutputTime += snapshotInterval;
                     }
@@ -161,5 +166,22 @@ public class GalaxySimulation {
             ));
         }
         return copy;
+    }
+
+    private void writeParticlesToFile(PrintWriter particlesWriter, double time) {
+        if (particlesWriter == null) {
+            return;
+        }
+        
+        particlesWriter.println(particles.size());
+        particlesWriter.println(String.format(Locale.US, "t=%.8f", time));
+        
+        for (Particle p : particles) {
+            Vector3 pos = p.getPosition();
+            Vector3 vel = p.getVelocity();
+            // Format: mass pos_x pos_y pos_z vel_x vel_y vel_z
+            particlesWriter.printf(Locale.US, "%.8f\t%.8f\t%.8f\t%.8f\t%.8f\t%.8f\t%.8f%n",
+                p.getMass(), pos.getX(), pos.getY(), pos.getZ(), vel.getX(), vel.getY(), vel.getZ());
+        }
     }
 }

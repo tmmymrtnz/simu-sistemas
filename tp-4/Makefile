@@ -26,7 +26,7 @@ ENERGY_EXTRA_ARGS :=$(if $(strip $(ENERGY_DT_OUTPUT)), --dt-output $(ENERGY_DT_O
 JAVA_SOURCES := $(wildcard $(SIM_DIR)/*.java)
 
 .PHONY: all compile run run-galaxy analysis analysis-oscilator analysis-energy \
-	analysis-rhm analysis-rhm-interactive analysis-tcross analysis-animation plot-rhm clean
+	analysis-rhm analysis-rhm-interactive analysis-tcross analysis-animation plot-rhm clean bodies-animation
 
 all: compile run
 
@@ -42,6 +42,20 @@ run: compile
 run-galaxy: compile
 	@echo "Running galaxy simulation (System 2)..."
 	$(JAVA) -cp $(OUT_DIR) simulation.GalaxyMain $(ARGS)
+
+run-animation: compile
+	@echo "Running two-cluster collision simulation for animation..."
+	$(JAVA) -cp $(OUT_DIR) simulation.GalaxyMain \
+	--N 200 \
+	--dt 0.002 \
+	--tf 10.0 \
+	--h 0.05 \
+	--speed 0.1 \
+	--dt-output 0.02 \
+	--collision \
+	--cluster-size 100 \
+	--dx 4.0 \
+	--dy 0.5
 
 analysis: analysis-oscilator analysis-energy analysis-rhm analysis-tcross
 
@@ -88,6 +102,18 @@ plot-rhm:
 	@mkdir -p tmp_mpl tmp_cache
 	MPLCONFIGDIR=./tmp_mpl XDG_CACHE_HOME=./tmp_cache python3 $(ANALYSIS_DIR)/plot_rhm_from_energy.py $(FILE) $(if $(strip $(OUTPUT)),--output $(OUTPUT),)
 
+
+## run: make bodies-animation FILE=src/out/galaxy/particles/cluster_200_run000_particles.txt
+bodies-animation:
+	@if [ -z "$(FILE)" ]; then \
+		echo "ERROR: specify the particle data file with FILE=..."; \
+		exit 1; \
+	fi
+	@echo "Creating animation from $(FILE)..."
+	python3 src/analisis/animation.py \
+		$(FILE) \
+		--output src/analisis/plots/animation.mp4 \
+		--fps $(FPS)
 clean:
 	@echo "Cleaning up..."
 	rm -rf $(OUT_DIR)

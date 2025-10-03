@@ -68,11 +68,12 @@ public class GalaxyMain {
                             : String.format(Locale.US, "gaussian_N%d_run%03d", particles.size(), runIndex);
 
                     Path energyPath = outputDir.resolve("energy").resolve(runLabel + "_energy.txt");
+                    Path particlesPath = outputDir.resolve("particles").resolve(runLabel + "_particles.txt");
 
                     System.out.printf(Locale.US, "Running %s (dt=%.5f, dt_out=%.5f, tf=%.2f, h=%.3f) -> %s%n",
                             runLabel, dt, snapshotDt, tf, softening, energyPath);
 
-                    simulation.run(energyPath);
+                    simulation.run(energyPath, particlesPath);
                     return null;
                 });
             }
