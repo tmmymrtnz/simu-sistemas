@@ -48,6 +48,18 @@ def calculate_mse_and_positions(file_path):
     mse_verlet = np.mean((pos_real_np - pos_verlet_np)**2)
     mse_gear = np.mean((pos_real_np - pos_gear_np)**2)
     
+    # Diagnóstico adicional
+    max_error_beeman = np.max(np.abs(pos_real_np - pos_beeman_np))
+    max_error_verlet = np.max(np.abs(pos_real_np - pos_verlet_np))
+    max_error_gear = np.max(np.abs(pos_real_np - pos_gear_np))
+    
+    print(f"Diagnóstico para dt correspondiente:")
+    print(f"Número de puntos: {len(pos_real_np)}")
+    print(f"Tiempo final: {tiempos[-1]:.6f}")
+    print(f"Error máximo absoluto - Beeman: {max_error_beeman:.6e}")
+    print(f"Error máximo absoluto - Verlet: {max_error_verlet:.6e}")
+    print(f"Error máximo absoluto - Gear: {max_error_gear:.6e}")
+    
     return mse_beeman, mse_verlet, mse_gear, np.array(tiempos), pos_real_np, pos_beeman_np, pos_verlet_np, pos_gear_np
 
 results = calculate_mse_and_positions(zoomed_data_path)
@@ -93,7 +105,7 @@ if results is not None:
         ax2.plot(times_zoomed, verlet_ds, color='chocolate', linestyle='--', label="Verlet Original")
         ax2.plot(times_zoomed, gear_ds, color='olivedrab', linestyle='--', label="Gear Predictor-Corrector")
         ax2.set_xlim(start_time, end_time)
-        ax2.set_ylim(0.104847, 0.104853)
+        ax2.set_ylim(0.1048522, 0.1048526)
         ax2.set_xlabel("Tiempo (s)")
         ax2.set_ylabel("Posición (m)")
         ax2.legend()

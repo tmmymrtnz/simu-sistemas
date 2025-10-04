@@ -32,7 +32,7 @@ public class Main {
     }
 
     private static void runSimulation(double dt, double tf, double x0, double v0, double k, double gamma, double m, double A, String outputFileName) {
-        double t = 0.0;
+        double t = dt;
         double BeemanX0 = x0;
         double BeemanV0 = v0;
         double VerletX0 = x0;
@@ -49,7 +49,7 @@ public class Main {
         );
 
         NumericMethod gear5 = new GearFifthOrder(
-            (x, v, time) -> (-k * x - gamma * v) / m, GearX0, GearV0, 0.0
+            (x, v, time) -> (-k * x - gamma * v) / m, GearX0, GearV0, 0.0, k, m, gamma
         );
 
         try (PrintWriter pw = new PrintWriter(outputFileName)) {
@@ -57,7 +57,7 @@ public class Main {
             while (t < tf) {
                 State BeemanState = beeman.solve(BeemanX0, BeemanV0, t, dt);
                 State VerletState = verlet.solve(VerletX0, VerletV0, t, dt);
-                State GearState = gear5.solve(GearX0, GearV0, t, dt);
+                State GearState = gear5.solve(0.0, 0.0, t, dt); // Gear ignora estos parámetros
                 double realvalue = A * Math.exp(-gamma * t / (2.0 * m)) * Math.cos(Math.sqrt(k / m - (gamma * gamma) / (4.0 * m * m)) * t);
                 
                 pw.println(t + "\t" + BeemanState.getX() + "\t" + VerletState.getX() + "\t" + realvalue + "\t" + GearState.getX());
@@ -66,8 +66,7 @@ public class Main {
                 BeemanV0 = BeemanState.getV();
                 VerletX0 = VerletState.getX();
                 VerletV0 = VerletState.getV();
-                GearX0 = GearState.getX();
-                GearV0 = GearState.getV();
+                // No actualizamos GearX0 ni GearV0 porque Gear mantiene su propio estado
                 t += dt;
             }
         } catch (IOException e) {
