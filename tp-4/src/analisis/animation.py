@@ -4,19 +4,10 @@ import numpy as np
 import argparse
 import os
 
-# --- PATH BUILDING VARIABLES (Removed - we use args.file instead) ---
-# NOTE: Removed the hardcoded path logic (script_dir, base_dir, file_path) 
-# to ensure the script uses the file path passed via the Makefile (args.file).
-# This prevents conflict and respects user input.
 
 def parse_xyz_file(filepath):
     """
     Parses a custom .txt file with XYZ-like format for particle data.
-    The format is:
-    N
-    t=<time>
-    mass pos_x pos_y pos_z vel_x vel_y vel_z
-    ...
     """
     if not os.path.exists(filepath):
         print(f"File not found at: {filepath}")
@@ -37,13 +28,13 @@ def parse_xyz_file(filepath):
             
             num_particles = int(current_line) 
 
-            time_str = lines[i+1].strip()
+            time_str = lines[i + 1].strip()
             time = float(time_str.split('=')[1])
             
-            frame_data = {'time': time, 'positions': [], 'velocities': []}
+            frame_data = {'time': time, 'positions': [], 'velocities': [], 'num_particles': num_particles} 
             
             for j in range(num_particles):
-                line = lines[i+2+j].strip().split()
+                line = lines[i + 2 + j].strip().split()
                 pos = [float(x) for x in line[1:4]]
                 vel = [float(x) for x in line[4:7]]
                 
@@ -53,34 +44,47 @@ def parse_xyz_file(filepath):
             particles_data.append(frame_data)
             i += 2 + num_particles 
             
-        except (ValueError, IndexError) as e:
-            # This block means either the file ended, or the format was wrong (e.g., trying to read 
-            # the time line or particle data line as N). We break because we hit unexpected data.
-            # print(f"Debug: Failed to parse line {i+1}. Error: {e}") 
+        except (ValueError, IndexError):
             break
             
     return particles_data
 
-def update_plot(frame, particles_data, scatter):
+
+def update_plot(frame, particles_data, scatter1, scatter2, cluster_size):
     """
-    Updates the scatter plot for each animation frame.
+    Updates the scatter plot(s) for each animation frame.
     """
     frame_data = particles_data[frame]
     positions = np.array(frame_data['positions'])
-    
-    scatter._offsets3d = (positions[:, 0], positions[:, 1], positions[:, 2])
-    
-    global ax 
+
+    scatter1._offsets3d = (
+        positions[:cluster_size, 0],
+        positions[:cluster_size, 1],
+        positions[:cluster_size, 2]
+    )
+
+    return_objects = [scatter1]
+
+    if scatter2 is not None:
+        scatter2._offsets3d = (
+            positions[cluster_size:, 0],
+            positions[cluster_size:, 1],
+            positions[cluster_size:, 2]
+        )
+        return_objects.append(scatter2)
+
+    global ax
     ax.set_title(f"Time: {frame_data['time']:.2f}")
 
-    return scatter,
+    return return_objects
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Animate N-body simulation from a data file.")
-    # NOTE: The 'file' argument now correctly describes the intended input.
     parser.add_argument("file", help="Path to the PARTICLE DATA file (e.g., cluster_200_run000_particles.txt).")
     parser.add_argument("--output", help="Output filename for the animation (e.g., animation.mp4).")
     parser.add_argument("--fps", type=int, default=30, help="Frames per second for the animation.")
+    parser.add_argument("--cluster-size", type=int, default=100, help="Number of particles per cluster. If total N = this size, only one group is plotted.")
     
     args = parser.parse_args()
 
@@ -94,28 +98,43 @@ if __name__ == "__main__":
         print("Exiting.")
         exit(1)
 
-    # ... (Rest of the animation setup)
+    total_particles = particles_data[0]['num_particles'] 
+    cluster_size = args.cluster_size
     
+    # Check if there should be a second cluster: total particles > size of the first cluster
+    has_second_cluster = total_particles > cluster_size
+
     fig = plt.figure(figsize=(8, 8))
-    # 'ax' needs to be globally accessible for 'update_plot' to work correctly
     global ax
     ax = fig.add_subplot(111, projection='3d')
     ax.set_xlabel('X Position')
     ax.set_ylabel('Y Position')
     ax.set_zlabel('Z Position')
-    
+
     initial_positions = np.array(particles_data[0]['positions'])
+
     ax.set_xlim([initial_positions[:, 0].min() - 1, initial_positions[:, 0].max() + 1])
     ax.set_ylim([initial_positions[:, 1].min() - 1, initial_positions[:, 1].max() + 1])
     ax.set_zlim([initial_positions[:, 2].min() - 1, initial_positions[:, 2].max() + 1])
+
+    cluster1_pos = initial_positions[:cluster_size]
     
-    scatter = ax.scatter(initial_positions[:, 0], initial_positions[:, 1], initial_positions[:, 2], s=50)
+    color1 = 'blue' if has_second_cluster else 'green' 
+    scatter1 = ax.scatter(cluster1_pos[:, 0], cluster1_pos[:, 1], cluster1_pos[:, 2],
+                          s=50, color=color1, label='Cluster 1' if has_second_cluster else 'All Particles')
+    
+    scatter2 = None 
+    
+    if has_second_cluster:
+        cluster2_pos = initial_positions[cluster_size:]
+        scatter2 = ax.scatter(cluster2_pos[:, 0], cluster2_pos[:, 1], cluster2_pos[:, 2],
+                              s=50, color="#FF00C8", label='Cluster 2')
 
     ani = animation.FuncAnimation(
         fig,
         update_plot,
         frames=len(particles_data),
-        fargs=(particles_data, scatter),
+        fargs=(particles_data, scatter1, scatter2, cluster_size), 
         interval=1000 / args.fps,
         blit=False,
         repeat=False

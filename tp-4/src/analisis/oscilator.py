@@ -150,8 +150,8 @@ for dt in dt_values:
 if mse_beeman_dt:
     fig3, ax3 = plt.subplots(figsize=(10, 6))
     ax3.loglog(dt_values[:len(mse_beeman_dt)], mse_beeman_dt, marker='o', label='Beeman', color='steelblue')
-    ax3.loglog(dt_values[:len(mse_verlet_dt)], mse_verlet_dt, marker='o', label='Verlet', color='chocolate')
-    ax3.loglog(dt_values[:len(mse_gear_dt)], mse_gear_dt, marker='o', label='Gear', color='olivedrab')
+    ax3.loglog(dt_values[:len(mse_verlet_dt)], mse_verlet_dt, marker='o', label='Verlet Original', color='chocolate')
+    ax3.loglog(dt_values[:len(mse_gear_dt)], mse_gear_dt, marker='o', label='Gear Predictor-Corrector', color='olivedrab')
     ax3.set_xlabel("dt (s)")
     ax3.set_ylabel("Error Cuadrático Medio")
     ax3.set_title("Precisión de los Algoritmos vs. Tamaño del Paso de Tiempo")

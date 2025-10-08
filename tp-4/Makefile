@@ -10,7 +10,9 @@ ANALYSIS_DIR := $(SRC_DIR)/analisis
 
 THRESHOLD ?= 1.0
 PROJECTION ?= xy
-FPS ?= 30
+FPS = 60 
+SINGLE_CLUSTER_N = 2000
+DUAL_CLUSTER_N = 100
 OUTPUT ?=
 ARGS ?=
 
@@ -43,19 +45,32 @@ run-galaxy: compile
 	@echo "Running galaxy simulation (System 2)..."
 	$(JAVA) -cp $(OUT_DIR) simulation.GalaxyMain $(ARGS)
 
-run-animation: compile
-	@echo "Running two-cluster collision simulation for animation..."
+# New Rule: Runs a single, Gaussian cluster simulation (N=2000)
+run-gaussian-2000: compile
+	@echo "Running single Gaussian cluster simulation (N=$(SINGLE_CLUSTER_N))..."
 	$(JAVA) -cp $(OUT_DIR) simulation.GalaxyMain \
-	--N 200 \
+	--N $(SINGLE_CLUSTER_N) \
+	--dt 0.002 \
+	--tf 10.0 \
+	--h 0.05 \
+	--speed 0.1 \
+	--dt-output 0.02
+# Output filename example: src/out/galaxy/particles/gaussian_N100_run000_particles.txt
+
+# New Rule: Runs the large 2-cluster collision simulation (N=2000)
+run-collision-100: compile
+	@echo "Running large 2-cluster collision simulation (N=$(DUAL_CLUSTER_N), 50 each)..."
+	$(JAVA) -cp $(OUT_DIR) simulation.GalaxyMain \
 	--dt 0.002 \
 	--tf 10.0 \
 	--h 0.05 \
 	--speed 0.1 \
 	--dt-output 0.02 \
 	--collision \
-	--cluster-size 100 \
-	--dx 4.0 \
-	--dy 0.5
+	--cluster-size 50 \
+	--dx 8.0 \
+	--dy 1.0 
+
 
 analysis: analysis-oscilator analysis-energy analysis-rhm analysis-tcross
 
@@ -103,17 +118,34 @@ plot-rhm:
 	MPLCONFIGDIR=./tmp_mpl XDG_CACHE_HOME=./tmp_cache python3 $(ANALYSIS_DIR)/plot_rhm_from_energy.py $(FILE) $(if $(strip $(OUTPUT)),--output $(OUTPUT),)
 
 
-## run: make bodies-animation FILE=src/out/galaxy/particles/cluster_200_run000_particles.txt
-bodies-animation:
-	@if [ -z "$(FILE)" ]; then \
-		echo "ERROR: specify the particle data file with FILE=..."; \
+## 1-cluster, N=2000
+animate-gaussian-2000:
+	@FILE=$(SRC_DIR)/out/galaxy/particles/gaussian_N$(SINGLE_CLUSTER_N)_run000_particles.txt; \
+	if [ ! -f "$$FILE" ]; then \
+		echo "ERROR: Run 'make run-gaussian-2000' first to generate $$FILE"; \
 		exit 1; \
-	fi
-	@echo "Creating animation from $(FILE)..."
+	fi; \
+	echo "Creating single-cluster animation from $$FILE..."; \
 	python3 src/analisis/animation.py \
-		$(FILE) \
-		--output src/analisis/plots/animation.mp4 \
-		--fps $(FPS)
+		$$FILE \
+		--output $(SRC_DIR)/analisis/plots/animation_gaussian_2000.mp4 \
+		--fps $(FPS) \
+		--cluster-size $(SINGLE_CLUSTER_N) # Cluster size = Total N ensures single group plot
+
+# 2-cluster, N=100
+animate-collision-100:
+	@FILE=$(SRC_DIR)/out/galaxy/particles/cluster_$(DUAL_CLUSTER_N)_run000_particles.txt; \
+	if [ ! -f "$$FILE" ]; then \
+		echo "ERROR: Run 'make run-collision-100' first to generate $$FILE"; \
+		exit 1; \
+	fi; \
+	echo "Creating two-cluster animation from $$FILE..."; \
+	python3 src/analisis/animation.py \
+		$$FILE \
+		--output $(SRC_DIR)/analisis/plots/animation_collision_100.mp4 \
+		--fps $(FPS) \
+		--cluster-size 50 # Cluster size = N/2 ensures two distinct groups plot
+
 clean:
 	@echo "Cleaning up..."
 	rm -rf $(OUT_DIR)
