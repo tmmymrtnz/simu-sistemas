@@ -29,6 +29,7 @@ public class GalaxyMain {
         double snapshotDt = Double.parseDouble(params.getOrDefault("--dt-output", "0.02"));
         long seed = Long.parseLong(params.getOrDefault("--seed", String.valueOf(System.currentTimeMillis())));
         boolean collision = params.containsKey("--collision");
+        boolean dumpSnapshots = params.containsKey("--dump-snapshots");
         int clusterSize = Integer.parseInt(params.getOrDefault("--cluster-size", String.valueOf(Math.max(1, n / 2))));
         double dx = Double.parseDouble(params.getOrDefault("--dx", "4.0"));
         double dy = Double.parseDouble(params.getOrDefault("--dy", "0.5"));
@@ -68,12 +69,17 @@ public class GalaxyMain {
                             : String.format(Locale.US, "gaussian_N%d_run%03d", particles.size(), runIndex);
 
                     Path energyPath = outputDir.resolve("energy").resolve(runLabel + "_energy.txt");
-                    Path particlesPath = outputDir.resolve("particles").resolve(runLabel + "_particles.txt");
+                    Path snapshotPath = dumpSnapshots
+                            ? outputDir.resolve("snapshots").resolve(runLabel + "_state.txt")
+                            : null;
 
                     System.out.printf(Locale.US, "Running %s (dt=%.5f, dt_out=%.5f, tf=%.2f, h=%.3f) -> %s%n",
                             runLabel, dt, snapshotDt, tf, softening, energyPath);
+                    if (snapshotPath != null) {
+                        System.out.printf(Locale.US, "   snapshots -> %s%n", snapshotPath);
+                    }
 
-                    simulation.run(energyPath, particlesPath);
+                    simulation.run(energyPath, snapshotPath);
                     return null;
                 });
             }

@@ -13,6 +13,7 @@ from typing import Dict, List, Tuple, Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.ticker import FuncFormatter
 
 
 def parse_energy_file(path: Path) -> Tuple[float, np.ndarray, np.ndarray]:
@@ -57,6 +58,14 @@ def compute_drift(times: np.ndarray, totals: np.ndarray) -> np.ndarray:
     return np.abs((totals - e0) / e0)
 
 
+def _sci_formatter(value: float, _: int) -> str:
+    if value == 0.0:
+        return "0"
+    mantissa, exponent = f"{value:.0e}".split("e")
+    mantissa = mantissa.rstrip("0").rstrip(".") or "1"
+    return f"{mantissa}e{int(exponent)}"
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Study energy conservation vs dt")
     parser.add_argument("--root", default=os.path.join("..", "out", "galaxy", "energy"),
@@ -92,12 +101,17 @@ def main() -> None:
     ensure_energy_data(energy_dir, args, dts, dt_output_override)
 
     grouped: Dict[float, List[Tuple[np.ndarray, np.ndarray, Path]]] = defaultdict(list)
-    for path in sorted(energy_dir.rglob(args.pattern)):
-        name = path.name
-        if f"N{args.N}_" not in name:
+    dt_dirs = sorted(d for d in energy_dir.glob('dt_*') if d.is_dir())
+    for dt_dir in dt_dirs:
+        energy_subdir = dt_dir / 'energy'
+        if not energy_subdir.exists():
             continue
-        dt, times, totals = parse_energy_file(path)
-        grouped[dt].append((times, totals, path))
+        for path in sorted(energy_subdir.glob(args.pattern)):
+            name = path.name
+            if f"N{args.N}_" not in name:
+                continue
+            dt, times, totals = parse_energy_file(path)
+            grouped[dt].append((times, totals, path))
 
     if not grouped:
         raise SystemExit(f"No energy files found under {energy_dir}")
@@ -114,6 +128,7 @@ def main() -> None:
 
         times_ref = entries[0][0][:min_length]
         drifts = []
+        energy_ratios = []
         for times, totals, path in entries:
             truncated_times = times[:min_length]
             truncated_totals = totals[:min_length]
@@ -121,6 +136,10 @@ def main() -> None:
                 print(f"⚠️  Ajustando serie con timeline diferente en {path}")
             drift = compute_drift(truncated_times, truncated_totals)
             drifts.append(drift)
+            mean_energy = float(np.mean(truncated_totals))
+            std_energy = float(np.std(truncated_totals))
+            denom = abs(mean_energy) if abs(mean_energy) > 1e-12 else 1.0
+            energy_ratios.append(std_energy / denom)
 
         stacked = np.vstack(drifts)
         mean_drift = stacked.mean(axis=0)
@@ -129,6 +148,7 @@ def main() -> None:
         max_per_run = stacked.max(axis=1)
         rms_per_run = np.sqrt((stacked ** 2).mean(axis=1))
         final_per_run = stacked[:, -1]
+        energy_ratios = np.asarray(energy_ratios, dtype=float)
 
         summary_rows.append({
             "dt": dt,
@@ -140,12 +160,13 @@ def main() -> None:
             "rms_mean": float(np.mean(rms_per_run)),
             "rms_std": float(np.std(rms_per_run, ddof=0)),
             "final_mean": float(np.mean(final_per_run)),
-            "final_std": float(np.std(final_per_run, ddof=0))
+            "final_std": float(np.std(final_per_run, ddof=0)),
+            "ratio_mean": float(np.mean(energy_ratios)) if energy_ratios.size else float('nan'),
+            "ratio_std": float(np.std(energy_ratios, ddof=0)) if energy_ratios.size else float('nan')
         })
     plt.yscale("log")
     plt.xlabel("Tiempo")
     plt.ylabel("|E(t)-E(0)| / |E(0)|")
-    plt.title("Deriva relativa de energía")
     plt.grid(True, which="both", alpha=0.3)
     plt.legend()
     energy_time_plot = output_dir / "energy_drift_vs_time.png"
@@ -154,14 +175,15 @@ def main() -> None:
     print(f"✅ Guardado {energy_time_plot}")
 
     dts_summary = [row["dt"] for row in summary_rows]
-    max_means = [row["max_mean"] for row in summary_rows]
-    max_stds = [row["max_std"] for row in summary_rows]
+    ratio_means = [row["ratio_mean"] for row in summary_rows]
+    ratio_stds = [row["ratio_std"] for row in summary_rows]
 
     plt.figure(figsize=(6, 5))
-    plt.errorbar(dts_summary, max_means, yerr=max_stds, fmt="o-", capsize=4)
-    plt.xlabel("dt")
-    plt.ylabel("max |ΔE/E|")
-    plt.title("Error máximo de energía vs dt")
+    plt.errorbar(dts_summary, ratio_means, yerr=ratio_stds, fmt="o-", capsize=4)
+    ax = plt.gca()
+    ax.xaxis.set_major_formatter(FuncFormatter(_sci_formatter))
+    plt.xlabel("$\\Delta t$")
+    plt.ylabel("std(E)/|mean(E)|")
     plt.grid(True, which="both", alpha=0.3)
     convergence_plot = output_dir / "energy_error_vs_dt.png"
     plt.tight_layout()
@@ -180,13 +202,16 @@ def main() -> None:
         "std RMS",
         "mean final",
         "std final",
+        "mean std/|E|",
+        "std std/|E|",
     )
     print("\t".join(header))
     for row in sorted(summary_rows, key=lambda r: r["dt"]):
         print(
             f"{row['dt']:.6g}\t{row['runs']}\t{row['max_mean']:.3e}\t{row['max_std']:.3e}\t"
             f"{row['max_best']:.3e}\t{row['max_worst']:.3e}\t{row['rms_mean']:.3e}\t"
-            f"{row['rms_std']:.3e}\t{row['final_mean']:.3e}\t{row['final_std']:.3e}"
+            f"{row['rms_std']:.3e}\t{row['final_mean']:.3e}\t{row['final_std']:.3e}\t"
+            f"{row['ratio_mean']:.3e}\t{row['ratio_std']:.3e}"
         )
         if row["runs"] < args.min_runs:
             print(f"⚠️  dt={row['dt']:.6g} tiene solo {row['runs']} realizacion(es); apuntá a {args.min_runs} para estadísticas robustas.")

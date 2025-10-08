@@ -37,36 +37,56 @@ public class GalaxySimulation {
         this.description = description;
     }
 
-    public void run(Path energyPath, Path particlesPath) throws IOException {
+    public void run(Path energyPath) throws IOException {
+        run(energyPath, null);
+    }
+
+    public void run(Path energyPath, Path snapshotPath) throws IOException {
         Files.createDirectories(energyPath.getParent());
-        Files.createDirectories(particlesPath.getParent());
+        if (snapshotPath != null) {
+            Files.createDirectories(snapshotPath.getParent());
+        }
 
         double time = 0.0;
         double nextOutputTime = snapshotInterval > 0.0 ? snapshotInterval : dt;
         boolean outputEveryStep = snapshotInterval <= 0.0;
 
-        try (PrintWriter energyWriter = new PrintWriter(Files.newBufferedWriter(energyPath));
-            PrintWriter particlesWriter = new PrintWriter(Files.newBufferedWriter(particlesPath))) {
-            
-            if (description != null && !description.isBlank()) {
-                energyWriter.println(description);
-            }
-            energyWriter.println(String.format(Locale.US, "# dt=%.8f snapshot_dt=%.8f", dt, snapshotInterval));
-            energyWriter.println("# columns: t\ttotal_energy\tr_hm");
+        try (PrintWriter energyWriter = new PrintWriter(Files.newBufferedWriter(energyPath))) {
+            PrintWriter snapshotWriter = null;
+            try {
+                if (description != null && !description.isBlank()) {
+                    energyWriter.println(description);
+                }
+                energyWriter.println(String.format(Locale.US, "# dt=%.8f snapshot_dt=%.8f", dt, snapshotInterval));
+                energyWriter.println("# columns: t\ttotal_energy\tr_hm");
 
-            writeEnergyRow(energyWriter, time);
-            writeParticlesToFile(particlesWriter, time);
-
-            while (time < tf) {
-                integrator.step(particles, dt, softeningLength);
-                time += dt;
-
-                if (outputEveryStep || time + 1e-12 >= nextOutputTime) {
-                    writeEnergyRow(energyWriter, time);
-                    writeParticlesToFile(particlesWriter, time);
-                    if (!outputEveryStep) {
-                        nextOutputTime += snapshotInterval;
+                if (snapshotPath != null) {
+                    snapshotWriter = new PrintWriter(Files.newBufferedWriter(snapshotPath));
+                    if (description != null && !description.isBlank()) {
+                        snapshotWriter.println(description);
                     }
+                    snapshotWriter.println(String.format(Locale.US, "# dt=%.8f snapshot_dt=%.8f", dt, snapshotInterval));
+                    snapshotWriter.println("# columns: t\tid\tx\ty\tz\tvx\tvy\tvz");
+                }
+
+                writeEnergyRow(energyWriter, time);
+                writeSnapshotRows(snapshotWriter, time);
+
+                while (time < tf) {
+                    integrator.step(particles, dt, softeningLength);
+                    time += dt;
+
+                    if (outputEveryStep || time + 1e-12 >= nextOutputTime) {
+                        writeEnergyRow(energyWriter, time);
+                        writeSnapshotRows(snapshotWriter, time);
+                        if (!outputEveryStep) {
+                            nextOutputTime += snapshotInterval;
+                        }
+                    }
+                }
+            } finally {
+                if (snapshotWriter != null) {
+                    snapshotWriter.close();
                 }
             }
         }
@@ -79,6 +99,28 @@ public class GalaxySimulation {
         EnergySnapshot energy = computeEnergy();
         double halfMassRadius = computeHalfMassRadius();
         energyWriter.printf(Locale.US, "%.8f\t%.12f\t%.12f%n", time, energy.getTotal(), halfMassRadius);
+    }
+
+    private void writeSnapshotRows(PrintWriter snapshotWriter, double time) {
+        if (snapshotWriter == null) {
+            return;
+        }
+        for (Particle particle : particles) {
+            Vector3 position = particle.getPosition();
+            Vector3 velocity = particle.getVelocity();
+            snapshotWriter.printf(
+                    Locale.US,
+                    "%.8f\t%d\t%.12f\t%.12f\t%.12f\t%.12f\t%.12f\t%.12f%n",
+                    time,
+                    particle.getId(),
+                    position.getX(),
+                    position.getY(),
+                    position.getZ(),
+                    velocity.getX(),
+                    velocity.getY(),
+                    velocity.getZ()
+            );
+        }
     }
 
     private EnergySnapshot computeEnergy() {

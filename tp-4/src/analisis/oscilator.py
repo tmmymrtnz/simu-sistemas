@@ -154,7 +154,6 @@ if mse_beeman_dt:
     ax3.loglog(dt_values[:len(mse_gear_dt)], mse_gear_dt, marker='o', label='Gear Predictor-Corrector', color='olivedrab')
     ax3.set_xlabel("dt (s)")
     ax3.set_ylabel("Error Cuadrático Medio")
-    ax3.set_title("Precisión de los Algoritmos vs. Tamaño del Paso de Tiempo")
     ax3.grid(True, which="both", ls="-", alpha=0.3)
     ax3.legend(title="Algoritmo")
     plt.tight_layout()

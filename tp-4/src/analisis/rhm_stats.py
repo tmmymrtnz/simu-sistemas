@@ -29,12 +29,20 @@ def load_series(path: Path) -> Tuple[np.ndarray, np.ndarray]:
 
 
 def aggregate_runs(series: Sequence[Tuple[np.ndarray, np.ndarray]]) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    base_times = series[0][0]
+    if not series:
+        raise ValueError('No series provided')
+    lengths = [len(times) for times, _ in series]
+    min_len = min(lengths)
+    base_times = None
     values = []
     for times, rhm in series:
-        if not np.allclose(times, base_times):
-            raise ValueError("All runs must share the same timeline")
-        values.append(rhm)
+        trimmed_times = times[:min_len]
+        trimmed_values = rhm[:min_len]
+        if base_times is None:
+            base_times = trimmed_times
+        elif not np.allclose(trimmed_times, base_times, rtol=1e-6, atol=1e-9):
+            raise ValueError('All runs must share the same timeline (after trimming)')
+        values.append(trimmed_values)
     stacked = np.vstack(values)
     mean = stacked.mean(axis=0)
     std = stacked.std(axis=0)
@@ -117,7 +125,7 @@ def main() -> None:
     parser.add_argument("--output", default="plots", help="Directory to save figures")
     parser.add_argument("--tail", type=float, default=0.3, help="Fraction of late-time samples to fit")
     parser.add_argument("--Ns", type=int, nargs="+", help="Valores de N a considerar (default: 100 200 400 800 1200 1600 2000)")
-    parser.add_argument("--runs", type=int, default=5, help="Cantidad mínima de realizaciones por N")
+    parser.add_argument("--runs", type=int, default=10, help="Cantidad mínima de realizaciones por N")
     parser.add_argument("--dt", type=float, default=1e-3, help="Paso temporal dt")
     parser.add_argument("--dt-output", type=float, default=5e-2, help="Paso de guardado dt_output (default = dt si no se especifica)")
     parser.add_argument("--tf", type=float, default=20.0, help="Tiempo final de la simulación")
@@ -159,29 +167,38 @@ def main() -> None:
 
         fig, ax = plt.subplots(figsize=(8, 5))
         for path, (_, values) in zip(selected_paths, series):
-            label = path.stem.split("_run")[1]
-            ax.plot(times, values, alpha=0.3, linewidth=0.8, label=f"run {label}")
-        ax.plot(times, mean, color="black", linewidth=2.0, label="Promedio")
-        ax.fill_between(times, mean - std, mean + std, alpha=0.2, color="gray")
+            run_label = path.stem.split("_run")[1]
+            line_label = None if args.interactive else f"run {run_label}"
+            ax.plot(times, values, alpha=0.3, linewidth=0.8, label=line_label)
+        mean_line, = ax.plot(times, mean, color="black", linewidth=2.0, label="Promedio")
+        if not args.interactive:
+            ax.fill_between(times, mean - std, mean + std, alpha=0.2, color="gray")
         ax.set_xlabel("Tiempo")
         ax.set_ylabel("r_hm")
-        ax.set_title(f"Evolución r_hm(t) N={n}")
         ax.grid(True, alpha=0.3)
-        ax.legend(loc="upper right", fontsize="x-small")
 
         selected_idx: Optional[int] = None
+        stationary_line = None
         if args.interactive:
-            ax.set_title(f"Evolución r_hm(t) N={n}\nHaz click en el inicio de la tendencia estable")
+            print(f"Seleccioná en la figura el inicio de la tendencia estable para N={n} (clic)")
             fig.canvas.draw()
             click = plt.ginput(1, timeout=-1)
             if click:
                 selected_time = click[0][0]
                 selected_idx = int(np.clip(np.searchsorted(times, selected_time), 0, len(times) - 2))
-                ax.axvline(times[selected_idx], color="red", linestyle="--", label="Inicio estable")
-                ax.legend(loc="upper right", fontsize="x-small")
+                stationary_line = ax.axvline(times[selected_idx], color="red", linestyle="--", label="Inicio estable")
                 print(f"• N={n}: seleccionaste t≈{times[selected_idx]:.4f} como inicio estable")
             else:
                 print(f"⚠️ N={n}: no se seleccionó punto; se usa la cola automática")
+        if args.interactive:
+            handles = [mean_line]
+            labels = ["Promedio"]
+            if stationary_line is not None:
+                handles.append(stationary_line)
+                labels.append("Inicio estable")
+            ax.legend(handles, labels, loc="upper right", fontsize="x-small")
+        else:
+            ax.legend(loc="upper right", fontsize="x-small")
 
         out = output_dir / f"rhm_timeseries_N{n}.png"
         fig.tight_layout()
@@ -192,16 +209,24 @@ def main() -> None:
         plt.close(fig)
         print(f"✅ Guardado {out}")
 
-        slope = compute_slope(times, mean, args.tail, start_index=selected_idx)
-        print(f"Pendiente estimada para N={n}: {slope:.6e}")
-        slopes.append((n, slope))
+        run_slopes = []
+        for run_times, run_values in series:
+            slope_run = compute_slope(run_times, run_values, args.tail, start_index=selected_idx)
+            run_slopes.append(slope_run)
+        run_slopes = np.asarray(run_slopes, dtype=float)
+        slope_mean = float(run_slopes.mean()) if run_slopes.size else float('nan')
+        slope_std = float(run_slopes.std(ddof=0)) if run_slopes.size else float('nan')
+        print(f"Pendiente estimada para N={n}: {slope_mean:.6e} ± {slope_std:.6e}")
+        slopes.append((n, slope_mean, slope_std))
 
-    ns, slope_values = zip(*sorted(slopes))
+    slopes_sorted = sorted(slopes)
+    ns = [item[0] for item in slopes_sorted]
+    slope_means = [item[1] for item in slopes_sorted]
+    slope_stds = [item[2] for item in slopes_sorted]
     plt.figure(figsize=(6, 5))
-    plt.plot(ns, slope_values, marker="o")
+    plt.errorbar(ns, slope_means, yerr=slope_stds, fmt="o-", capsize=4)
     plt.xlabel("N")
     plt.ylabel("Pendiente <r_hm(t)>")
-    plt.title("Estado estacionario: pendiente vs N")
     plt.grid(True, alpha=0.3)
     slope_plot = output_dir / "rhm_slope_vs_N.png"
     plt.tight_layout()

@@ -33,7 +33,6 @@ def main():
     plt.plot(tiempos, rhm, linewidth=1.2)
     plt.xlabel("Tiempo")
     plt.ylabel("r_hm")
-    plt.title(f"r_hm(t) para {archivo.name}")
     plt.grid(True, alpha=0.3)
     plt.tight_layout()
 
