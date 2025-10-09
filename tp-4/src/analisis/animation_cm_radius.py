@@ -146,7 +146,7 @@ def animate(frames: List[FrameState],
             axis_padding: float,
             axis_abs_limit: float) -> None:
     inside_rgba = mcolors.to_rgba(inside_color)
-    outside_rgba = mcolors.to_rgba(outside_color)
+    outside_rgba = mcolors.to_rgba(outside_color, 0.2)
     sphere_rgba = mcolors.to_rgba(sphere_color)
 
     def apply_colors(scatter_obj, rgba: np.ndarray) -> None:
@@ -157,40 +157,49 @@ def animate(frames: List[FrameState],
         scatter_obj._facecolors2d = rgba
         scatter_obj._edgecolors2d = rgba
 
-    fig = plt.figure(figsize=(8, 8))
-    ax = fig.add_subplot(111, projection="3d")
-    setup_axes(ax, frames, radius_percentile, axis_padding, axis_abs_limit)
+    fig = plt.figure(figsize=(24, 8))
+    angles = [(30, 30), (60, 30), (90, 0)]
+    axes = [fig.add_subplot(1, 3, i+1, projection="3d") for i in range(3)]
+    for ax in axes:
+        setup_axes(ax, frames, radius_percentile, axis_padding, axis_abs_limit)
 
     sphere_x, sphere_y, sphere_z = create_unit_sphere()
-
     initial = frames[0]
     initial_mask = initial.distances <= initial.half_mass_radius + radius_tolerance
     initial_colors = np.empty((initial_mask.size, 4))
     initial_colors[initial_mask] = inside_rgba
     initial_colors[~initial_mask] = outside_rgba
-    scatter = ax.scatter(initial.positions[:, 0],
-                         initial.positions[:, 1],
-                         initial.positions[:, 2],
-                         c=initial_colors,
-                         s=35,
-                         depthshade=False)
-    apply_colors(scatter, initial_colors)
 
-    sphere_artist = ax.plot_surface(initial.center[0] + initial.half_mass_radius * sphere_x,
-                                    initial.center[1] + initial.half_mass_radius * sphere_y,
-                                    initial.center[2] + initial.half_mass_radius * sphere_z,
-                                    color=sphere_rgba,
-                                    alpha=sphere_alpha,
-                                    linewidth=0.0,
-                                    shade=False)
+    scatters = []
+    spheres = []
+    titles = []
+    for ax, (elev, azim) in zip(axes, angles):
+        scatter = ax.scatter(initial.positions[:, 0],
+                             initial.positions[:, 1],
+                             initial.positions[:, 2],
+                             c=initial_colors,
+                             s=35,
+                             depthshade=False)
+        apply_colors(scatter, initial_colors)
+        scatters.append(scatter)
 
-    title = ax.set_title(f"t = {initial.time:.3f} | r_hm = {initial.half_mass_radius:.3f}")
-
-    legend_handles = [
-        ax.scatter([], [], [], color=inside_color, label="r ≤ r_hm"),
-        ax.scatter([], [], [], color=outside_color, label="r > r_hm"),
-    ]
-    ax.legend(handles=legend_handles, loc="upper right", frameon=True)
+        sphere_artist = ax.plot_surface(initial.center[0] + initial.half_mass_radius * sphere_x,
+                                        initial.center[1] + initial.half_mass_radius * sphere_y,
+                                        initial.center[2] + initial.half_mass_radius * sphere_z,
+                                        color=sphere_rgba,
+                                        alpha=sphere_alpha,
+                                        linewidth=0.0,
+                                        shade=False)
+        spheres.append(sphere_artist)
+        ax.view_init(elev=elev, azim=azim)
+        title = ax.set_title(f"t = {initial.time:.3f} | r_hm = {initial.half_mass_radius:.3f}")
+        titles.append(title)
+        sphere = "#4E25F1C1"
+        ax.legend(handles=[
+            ax.scatter([], [], [], color=inside_color, label="r ≤ r_hm"),
+            ax.scatter([], [], [], color=outside_color, label="r > r_hm"),
+            ax.scatter([], [], [], color=sphere, label="Sphere with radius r_hm"),
+        ], loc="upper right", frameon=True)
 
     def update(frame_index: int):
         frame = frames[frame_index]
@@ -199,20 +208,25 @@ def animate(frames: List[FrameState],
         colors_rgba = np.empty((mask.size, 4))
         colors_rgba[mask] = inside_rgba
         colors_rgba[~mask] = outside_rgba
-        scatter._offsets3d = (positions[:, 0], positions[:, 1], positions[:, 2])
-        apply_colors(scatter, colors_rgba)
 
-        nonlocal sphere_artist
-        sphere_artist.remove()
-        sphere_artist = ax.plot_surface(frame.center[0] + frame.half_mass_radius * sphere_x,
-                                        frame.center[1] + frame.half_mass_radius * sphere_y,
-                                        frame.center[2] + frame.half_mass_radius * sphere_z,
-                                        color=sphere_rgba,
-                                        alpha=sphere_alpha,
-                                        linewidth=0.0,
-                                        shade=False)
-        title.set_text(f"t = {frame.time:.3f} | r_hm = {frame.half_mass_radius:.3f}")
-        return scatter, sphere_artist, title
+        for i, (ax, elev_azim) in enumerate(zip(axes, angles)):
+            ax.cla()
+            setup_axes(ax, frames, radius_percentile, axis_padding, axis_abs_limit)
+            ax.view_init(*elev_azim)
+            scatter = ax.scatter(positions[:,0], positions[:,1], positions[:,2], c=colors_rgba, s=35, depthshade=False)
+            ax.plot_surface(frame.center[0]+frame.half_mass_radius*sphere_x,
+                            frame.center[1]+frame.half_mass_radius*sphere_y,
+                            frame.center[2]+frame.half_mass_radius*sphere_z,
+                            color=sphere_rgba, alpha=sphere_alpha, linewidth=0.0, shade=False)
+            ax.set_title(f"t = {frame.time:.3f} | r_hm = {frame.half_mass_radius:.3f}")
+            sphere = "#4E25F1C1"
+            ax.legend(handles=[
+                ax.scatter([], [], [], color=inside_color, label="r ≤ r_hm"),
+                ax.scatter([], [], [], color=outside_color, label="r > r_hm"),
+                ax.scatter([], [], [], color=sphere, label="Sphere with radius r_hm"),
+            ], loc="upper right", frameon=True)
+
+        return []
 
     ani = animation.FuncAnimation(fig,
                                   update,
@@ -228,8 +242,7 @@ def animate(frames: List[FrameState],
     else:
         plt.show()
 
-
-def main(argv: Iterable[str] | None = None) -> None:
+def main(argv: Optional[Iterable[str]] = None) -> None:
     parser = argparse.ArgumentParser(description="Animate snapshots with r_hm sphere and distance colouring.")
     parser.add_argument("snapshot_file", help="Archivo *_state.txt generado con --dump-snapshots.")
     parser.add_argument("--energy-file", required=True, help="Archivo *_energy.txt correspondiente.")
@@ -259,19 +272,20 @@ def main(argv: Iterable[str] | None = None) -> None:
     energy_times, energy_radii = load_energy_series(energy_path)
     snapshot_rows = load_snapshot_rows(snapshot_path)
     frames = build_frames(snapshot_rows, energy_times, energy_radii)
-
     output_path = Path(args.output).resolve() if args.output else None
+    sphere = "#4E25F1C1"
+    axis_abs_limit_default = 6.0
     animate(frames,
             output=output_path,
             fps=max(args.fps, 1),
             inside_color=args.inside_color,
             outside_color=args.outside_color,
-            sphere_color=args.sphere_color,
+            sphere_color=mcolors.to_rgba(sphere, 0.2),
             sphere_alpha=np.clip(args.sphere_alpha, 0.0, 1.0),
             radius_tolerance=max(args.radius_tolerance, 0.0),
             radius_percentile=args.radius_percentile,
             axis_padding=max(args.axis_padding, 0.0),
-            axis_abs_limit=max(args.axis_abs_limit, 0.0))
+            axis_abs_limit=max(axis_abs_limit_default, 0.0))
 
 
 if __name__ == "__main__":
