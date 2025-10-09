@@ -66,19 +66,21 @@ public class GalaxySimulation {
                         snapshotWriter.println(description);
                     }
                     snapshotWriter.println(String.format(Locale.US, "# dt=%.8f snapshot_dt=%.8f", dt, snapshotInterval));
-                    snapshotWriter.println("# columns: t\tid\tx\ty\tz\tvx\tvy\tvz");
+                    snapshotWriter.println("# columns: t\tid\tx\ty\tz\tvx\tvy\tvz\tdist_rhm");
                 }
 
-                writeEnergyRow(energyWriter, time);
-                writeSnapshotRows(snapshotWriter, time);
+                HalfMassInfo halfMassInfo = computeHalfMassInfo();
+                writeEnergyRow(energyWriter, time, halfMassInfo.radius());
+                writeSnapshotRows(snapshotWriter, time, halfMassInfo);
 
                 while (time < tf) {
                     integrator.step(particles, dt, softeningLength);
                     time += dt;
 
                     if (outputEveryStep || time + 1e-12 >= nextOutputTime) {
-                        writeEnergyRow(energyWriter, time);
-                        writeSnapshotRows(snapshotWriter, time);
+                        halfMassInfo = computeHalfMassInfo();
+                        writeEnergyRow(energyWriter, time, halfMassInfo.radius());
+                        writeSnapshotRows(snapshotWriter, time, halfMassInfo);
                         if (!outputEveryStep) {
                             nextOutputTime += snapshotInterval;
                         }
@@ -92,25 +94,29 @@ public class GalaxySimulation {
         }
     }
 
-    private void writeEnergyRow(PrintWriter energyWriter, double time) {
+    private void writeEnergyRow(PrintWriter energyWriter, double time, double halfMassRadius) {
         if (energyWriter == null) {
             return;
         }
         EnergySnapshot energy = computeEnergy();
-        double halfMassRadius = computeHalfMassRadius();
         energyWriter.printf(Locale.US, "%.8f\t%.12f\t%.12f%n", time, energy.getTotal(), halfMassRadius);
     }
 
-    private void writeSnapshotRows(PrintWriter snapshotWriter, double time) {
+    private void writeSnapshotRows(PrintWriter snapshotWriter, double time, HalfMassInfo halfMassInfo) {
         if (snapshotWriter == null) {
             return;
         }
         for (Particle particle : particles) {
             Vector3 position = particle.getPosition();
             Vector3 velocity = particle.getVelocity();
+            double dx = position.getX() - halfMassInfo.cx();
+            double dy = position.getY() - halfMassInfo.cy();
+            double dz = position.getZ() - halfMassInfo.cz();
+            double radialDistance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+            double distanceFromHalfMass = Math.abs(radialDistance - halfMassInfo.radius());
             snapshotWriter.printf(
                     Locale.US,
-                    "%.8f\t%d\t%.12f\t%.12f\t%.12f\t%.12f\t%.12f\t%.12f%n",
+                    "%.8f\t%d\t%.12f\t%.12f\t%.12f\t%.12f\t%.12f\t%.12f\t%.12f%n",
                     time,
                     particle.getId(),
                     position.getX(),
@@ -118,7 +124,8 @@ public class GalaxySimulation {
                     position.getZ(),
                     velocity.getX(),
                     velocity.getY(),
-                    velocity.getZ()
+                    velocity.getZ(),
+                    distanceFromHalfMass
             );
         }
     }
@@ -149,7 +156,7 @@ public class GalaxySimulation {
         return new EnergySnapshot(kinetic, potential);
     }
 
-    private double computeHalfMassRadius() {
+    private HalfMassInfo computeHalfMassInfo() {
         int n = particles.size();
         double cx = 0.0;
         double cy = 0.0;
@@ -165,7 +172,6 @@ public class GalaxySimulation {
         cz /= n;
 
         double[] distances = new double[n];
-        double maxDistance = 0.0;
         for (int i = 0; i < n; i++) {
             Vector3 position = particles.get(i).getPosition();
             double dx = position.getX() - cx;
@@ -173,15 +179,12 @@ public class GalaxySimulation {
             double dz = position.getZ() - cz;
             double dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
             distances[i] = dist;
-            if (dist > maxDistance) {
-                maxDistance = dist;
-            }
         }
         Arrays.sort(distances);
 
         double target = 0.5 * n;
         if (target <= 1.0) {
-            return distances[0];
+            return new HalfMassInfo(distances[0], cx, cy, cz);
         }
 
         int lowerIndex = Math.max(0, (int) Math.floor(target - 1));
@@ -190,11 +193,42 @@ public class GalaxySimulation {
         double upperMass = upperIndex + 1;
 
         if (upperIndex == lowerIndex) {
-            return distances[lowerIndex];
+            return new HalfMassInfo(distances[lowerIndex], cx, cy, cz);
         }
 
         double fraction = (target - lowerMass) / (upperMass - lowerMass);
-        return distances[lowerIndex] + fraction * (distances[upperIndex] - distances[lowerIndex]);
+        double radius = distances[lowerIndex] + fraction * (distances[upperIndex] - distances[lowerIndex]);
+        return new HalfMassInfo(radius, cx, cy, cz);
+    }
+
+    private static final class HalfMassInfo {
+        private final double radius;
+        private final double cx;
+        private final double cy;
+        private final double cz;
+
+        private HalfMassInfo(double radius, double cx, double cy, double cz) {
+            this.radius = radius;
+            this.cx = cx;
+            this.cy = cy;
+            this.cz = cz;
+        }
+
+        double radius() {
+            return radius;
+        }
+
+        double cx() {
+            return cx;
+        }
+
+        double cy() {
+            return cy;
+        }
+
+        double cz() {
+            return cz;
+        }
     }
 
     public static List<Particle> deepCopy(List<Particle> particles) {

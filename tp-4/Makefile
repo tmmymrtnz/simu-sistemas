@@ -194,6 +194,25 @@ plot-rhm:
 	@mkdir -p tmp_mpl tmp_cache
 	MPLCONFIGDIR=./tmp_mpl XDG_CACHE_HOME=./tmp_cache python3 $(ANALYSIS_DIR)/plot_rhm_from_energy.py $(FILE) $(if $(strip $(OUTPUT)),--output $(OUTPUT),)
 
+animate-cm-radius:
+	@if [ -z "$(SNAP)" ] || [ -z "$(ENERGY)" ]; then \
+		echo "ERROR: usá SNAP=<archivo_state> y ENERGY=<archivo_energy>"; \
+		exit 1; \
+	fi
+	@if [ ! -f "$(SNAP)" ]; then \
+		echo "ERROR: no existe $(SNAP)"; \
+		exit 1; \
+	fi
+	@if [ ! -f "$(ENERGY)" ]; then \
+		echo "ERROR: no existe $(ENERGY)"; \
+		exit 1; \
+	fi
+	@echo "Generando animación con radio de media masa..."
+	MPLCONFIGDIR=./tmp_mpl XDG_CACHE_HOME=./tmp_cache python3 $(ANALYSIS_DIR)/animation_cm_radius.py \
+		$(SNAP) \
+		--energy-file $(ENERGY) \
+		$(if $(strip $(OUTPUT)),--output $(OUTPUT),)
+
 
 ## 1-cluster, N=2000
 animate-gaussian-2000:
