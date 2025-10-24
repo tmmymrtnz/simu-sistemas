@@ -62,6 +62,8 @@ def main() -> None:
     per_agent_rates = defaultdict(list)
     rows = []
 
+    counts_to_contacts = {}
+
     for count in agent_values:
         for seed in seeds:
             params = base_params.with_agents(count).with_seed(seed)
@@ -75,7 +77,7 @@ def main() -> None:
             print(
                 f"N={count:4d} seed={seed:6d} phi={phi:.4f} Q={rate:.6f} output={output_dir}"
             )
-            _plot_contacts_curve(output_dir, contacts, count, seed)
+            counts_to_contacts.setdefault(count, []).append((seed, contacts, output_dir))
 
     print("\nAveraged results per N:")
     lines = ["N,phi_mean,phi_std,Q_mean,Q_std,count"]
@@ -105,6 +107,7 @@ def main() -> None:
 
     if rows:
         _plot_phi_vs_q(rows)
+        _plot_contacts_comparison(counts_to_contacts)
 
 
 def _std(values, mean_value) -> float:
@@ -114,9 +117,9 @@ def _std(values, mean_value) -> float:
     return variance**0.5
 
 
-def _plot_contacts_curve(output_dir: Path, contacts, count: int, seed: int) -> None:
+def _plot_contacts_curve(output_dir: Path, contacts, count: int, seed: int) -> Path:
     if not contacts:
-        return
+        return Path()
     plot_dir = output_dir / "plots"
     plot_dir.mkdir(parents=True, exist_ok=True)
 
@@ -130,7 +133,45 @@ def _plot_contacts_curve(output_dir: Path, contacts, count: int, seed: int) -> N
     ax.set_ylabel("unique contacts")
     ax.grid(True, linestyle="--", linewidth=0.5, alpha=0.6)
     fig.tight_layout()
-    fig.savefig(plot_dir / f"contacts_curve_N{count}_seed{seed}.png", dpi=200)
+    out_path = plot_dir / f"contacts_curve_N{count}_seed{seed}.png"
+    fig.savefig(out_path, dpi=200)
+    plt.close(fig)
+    return out_path
+
+
+def _plot_contacts_comparison(counts_to_contacts: dict[int, list[tuple[int, list, Path]]]) -> None:
+    if not counts_to_contacts:
+        return
+
+    plot_dir = PROJECT_ROOT / "plots"
+    plot_dir.mkdir(parents=True, exist_ok=True)
+
+    fig, ax = plt.subplots()
+    color_cycle = plt.rcParams["axes.prop_cycle"].by_key().get("color", [])
+    color_map: dict[int, str] = {}
+    labeled: set[int] = set()
+
+    for count, entries in sorted(counts_to_contacts.items()):
+        for seed, contacts, _ in entries:
+            if not contacts:
+                continue
+            ordered = sorted(contacts, key=lambda c: c.time)
+            times = [c.time for c in ordered]
+            ordinals = list(range(1, len(ordered) + 1))
+            if count not in color_map:
+                color_map[count] = color_cycle[len(color_map) % len(color_cycle)] if color_cycle else None
+            color = color_map[count]
+            label = f"N={count}" if count not in labeled else None
+            ax.plot(times, ordinals, linewidth=1.2, color=color, label=label)
+            labeled.add(count)
+
+    ax.set_xlabel("t [s]")
+    ax.set_ylabel("unique contacts")
+    ax.grid(True, linestyle="--", linewidth=0.5, alpha=0.6)
+    if labeled:
+        ax.legend()
+    fig.tight_layout()
+    fig.savefig(plot_dir / "contacts_vs_time.png", dpi=200)
     plt.close(fig)
 
 
