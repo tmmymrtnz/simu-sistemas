@@ -65,7 +65,10 @@ def main() -> None:
     args = parser.parse_args()
     base_params = params_from_args(args)
     agent_values = args.agents_list or [base_params.agents]
-    seeds = args.seeds or [base_params.seed]
+    if args.seeds:
+        seeds = args.seeds
+    else:
+        seeds = [base_params.seed + i for i in range(5)]
 
     if powerlaw is None:
         print("Warning: powerlaw package not available. Exponent fits will be skipped.")
