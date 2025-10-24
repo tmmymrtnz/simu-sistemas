@@ -24,6 +24,13 @@ out/
 */out/
 **/out/
 
+# --- TP5 outputs ---
+tp-5/build/
+tp-5/output/
+tp-5/plots/
+tp-5/tmp_cache/
+tp-5/tmp_mpl_cache/
+
 # --- SO / Editores ---
 .DS_Store
 Thumbs.db
