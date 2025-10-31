@@ -18,6 +18,10 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 /**
  * Minimal example of how to wire the simulation pieces together.
@@ -28,27 +32,139 @@ import java.util.Map;
 public final class Main {
     private Main() {}
 
-    public static void main(String[] args) throws IOException {
-        Map<String, String> options = parseArgs(args);
-        if (options.containsKey("help")) {
+    public static void main(String[] args) throws IOException, InterruptedException {
+        Map<String, String> parsedOptions = parseArgs(args);
+        if (parsedOptions.containsKey("help")) {
             printUsage();
             return;
         }
 
+        Map<String, String> options = Map.copyOf(parsedOptions);
+
+        List<Integer> agentCounts = parseIntList(options, "agentsList");
+        if (agentCounts.isEmpty()) {
+            agentCounts = parseIntList(options, "agents");
+        }
+        if (agentCounts.isEmpty()) {
+            agentCounts = List.of(parseInt(options, "agents", 30));
+        }
+
+        List<Long> seedValues = parseLongList(options, "seedsList");
+        if (seedValues.isEmpty()) {
+            seedValues = parseLongList(options, "seeds");
+        }
+        if (seedValues.isEmpty()) {
+            seedValues = List.of(parseLong(options, "seed", 1234L));
+        }
+
+        List<RunSpec> runs = new ArrayList<>();
+        for (int agents : agentCounts) {
+            for (long seed : seedValues) {
+                runs.add(new RunSpec(agents, seed));
+            }
+        }
+
+        if (runs.isEmpty()) {
+            System.out.println("No simulation runs requested.");
+            return;
+        }
+
+        if (runs.size() == 1) {
+            RunSpec spec = runs.get(0);
+            runSimulation(options, spec.agents, spec.seed);
+            return;
+        }
+
+        if (options.containsKey("output")) {
+            throw new IllegalArgumentException("--output cannot be combined with multiple runs; remove it or provide unique paths.");
+        }
+
+        int threadCount = resolveThreadCount(options, runs.size());
+        System.out.println("Launching " + runs.size() + " simulations using " + threadCount + " threads.");
+
+        ExecutorService executor = Executors.newFixedThreadPool(threadCount);
+        List<Future<?>> futures = new ArrayList<>();
+        try {
+            for (RunSpec spec : runs) {
+                futures.add(executor.submit(() -> {
+                    runSimulation(options, spec.agents, spec.seed);
+                    return null;
+                }));
+            }
+            for (Future<?> future : futures) {
+                future.get();
+            }
+        } catch (ExecutionException e) {
+            executor.shutdownNow();
+            Throwable cause = e.getCause();
+            if (cause instanceof IOException ioException) {
+                throw ioException;
+            }
+            if (cause instanceof RuntimeException runtimeException) {
+                throw runtimeException;
+            }
+            if (cause instanceof Error error) {
+                throw error;
+            }
+            throw new RuntimeException("Simulation task failed", cause);
+        } catch (InterruptedException e) {
+            executor.shutdownNow();
+            Thread.currentThread().interrupt();
+            throw e;
+        } finally {
+            executor.shutdown();
+        }
+    }
+
+    private static void runSimulation(Map<String, String> options, int agentCount, long seed) throws IOException {
         double L = parseDouble(options, "domain", 6.0);
         double rc = parseDouble(options, "rc", 0.5);
         double dt = parseDouble(options, "dt", 0.002);
         double dt2 = parseDouble(options, "outputInterval", 0.02);
         long steps = resolveSteps(options, dt, 10_000);
-        int agentCount = parseInt(options, "agents", 30);
-        long seed = parseLong(options, "seed", 1234L);
         double minRadius = parseDouble(options, "minRadius", 0.18);
         double maxRadius = parseDouble(options, "maxRadius", 0.21);
-
-        String modelName = options.getOrDefault("model", "sfm").toLowerCase();
         double desiredSpeed = parseDouble(options, "desiredSpeed", 1.7);
 
-        PedestrianDynamicsModel model = switch (modelName) {
+        String modelName = options.getOrDefault("model", "sfm").toLowerCase();
+        PedestrianDynamicsModel model = createModel(options, modelName);
+
+        SimulationConfig config = new SimulationConfig(L, true, rc, dt, dt2, steps);
+        SimulationState initialState = SimulationFactory.randomPlacement(
+                config,
+                agentCount,
+                minRadius,
+                maxRadius,
+                desiredSpeed,
+                seed
+        );
+
+        int M = Math.max(1, (int) Math.floor(config.domainSize() / config.interactionRadius()));
+        CellIndexMethod cim = new CellIndexMethod(config.domainSize(), config.interactionRadius(), M, config.periodic(), true);
+        NeighbourProvider neighbours = new CIMNeighbourProvider(cim);
+
+        double phi = SimulationFactory.computeAreaFraction(initialState.getMobileAgents(), config.domainSize());
+        List<String> metadata = new ArrayList<>();
+        metadata.add("model=" + modelName);
+        metadata.add("agents=" + agentCount);
+        metadata.add("seed=" + seed);
+        metadata.add("desiredSpeed=" + desiredSpeed);
+        metadata.add("minRadius=" + minRadius);
+        metadata.add("maxRadius=" + maxRadius);
+        metadata.add("phi=" + phi);
+
+        Path outputDir = resolveOutput(options, modelName, agentCount, seed, steps);
+        System.out.println("[" + Thread.currentThread().getName() + "] Writing simulation output to: " + outputDir.toAbsolutePath());
+
+        try (SimulationOutputWriter writer = new SimulationOutputWriter(outputDir, config, model, metadata)) {
+            SimulationEngine engine = new SimulationEngine(initialState, model, neighbours, writer);
+            engine.run();
+            System.out.println("[" + Thread.currentThread().getName() + "] Finished simulation for agents=" + agentCount + " seed=" + seed);
+        }
+    }
+
+    private static PedestrianDynamicsModel createModel(Map<String, String> options, String modelName) {
+        return switch (modelName) {
             case "sfm" -> {
                 double sfmA = parseDouble(options, "sfmA", 2000.0);
                 double sfmB = parseDouble(options, "sfmB", 0.08);
@@ -76,38 +192,6 @@ public final class Main {
             }
             default -> throw new IllegalArgumentException("Unknown model: " + modelName);
         };
-
-        SimulationConfig config = new SimulationConfig(L, true, rc, dt, dt2, steps);
-        SimulationState initialState = SimulationFactory.randomPlacement(
-                config,
-                agentCount,
-                minRadius,
-                maxRadius,
-                desiredSpeed,
-                seed
-        );
-
-        int M = Math.max(1, (int) Math.floor(config.domainSize() / config.interactionRadius()));
-        CellIndexMethod cim = new CellIndexMethod(config.domainSize(), config.interactionRadius(), M, config.periodic(), true);
-        NeighbourProvider neighbours = new CIMNeighbourProvider(cim);
-
-        double phi = SimulationFactory.computeAreaFraction(initialState.getMobileAgents(), config.domainSize());
-        List<String> metadata = new ArrayList<>();
-        metadata.add("model=" + modelName);
-        metadata.add("agents=" + agentCount);
-        metadata.add("seed=" + seed);
-        metadata.add("desiredSpeed=" + desiredSpeed);
-        metadata.add("minRadius=" + minRadius);
-        metadata.add("maxRadius=" + maxRadius);
-        metadata.add("phi=" + phi);
-
-        Path outputDir = resolveOutput(options, modelName, agentCount, seed, steps);
-        System.out.println("Writing simulation output to: " + outputDir.toAbsolutePath());
-
-        try (SimulationOutputWriter writer = new SimulationOutputWriter(outputDir, config, model, metadata)) {
-            SimulationEngine engine = new SimulationEngine(initialState, model, neighbours, writer);
-            engine.run();
-        }
     }
 
     private static Map<String, String> parseArgs(String[] args) {
@@ -128,11 +212,62 @@ public final class Main {
         return opts;
     }
 
+    private static List<Integer> parseIntList(Map<String, String> opts, String key) {
+        String raw = opts.get(key);
+        if (raw == null) {
+            return List.of();
+        }
+        String trimmed = raw.trim();
+        if (trimmed.isEmpty()) {
+            return List.of();
+        }
+        String[] tokens = trimmed.split("[,;\\s]+");
+        List<Integer> values = new ArrayList<>();
+        for (String token : tokens) {
+            if (!token.isEmpty()) {
+                values.add(Integer.parseInt(token));
+            }
+        }
+        return values;
+    }
+
+    private static List<Long> parseLongList(Map<String, String> opts, String key) {
+        String raw = opts.get(key);
+        if (raw == null) {
+            return List.of();
+        }
+        String trimmed = raw.trim();
+        if (trimmed.isEmpty()) {
+            return List.of();
+        }
+        String[] tokens = trimmed.split("[,;\\s]+");
+        List<Long> values = new ArrayList<>();
+        for (String token : tokens) {
+            if (!token.isEmpty()) {
+                values.add(Long.parseLong(token));
+            }
+        }
+        return values;
+    }
+
+    private static int resolveThreadCount(Map<String, String> options, int runCount) {
+        int requested = parseInt(options, "threads", 5);
+        if (requested <= 0) {
+            requested = 1;
+        }
+        requested = Math.min(requested, 5);
+        if (runCount > 0) {
+            requested = Math.min(requested, runCount);
+        }
+        return Math.max(1, requested);
+    }
+
     private static void printUsage() {
         System.out.println("Usage: java tp5.simulacion.Main [--key=value ...]");
         System.out.println("Recognized keys:");
         System.out.println("  --output=path             Output directory (default auto-generated).");
         System.out.println("  --agents=int              Number of mobile agents (default 30).");
+        System.out.println("  --agentsList=vals         Comma/space separated agent counts for batch runs.");
         System.out.println("  --model=sfm|aacpm         Dynamics model (default sfm).");
         System.out.println("  --relaxation=double       (Deprecated) use --sfmTau instead.");
         System.out.println("  --domain=double           Square domain size L in meters (default 6.0).");
@@ -161,6 +296,9 @@ public final class Main {
         System.out.println("  --aacpmVdes=double        AACPM desired speed scaling (default 1.0).");
         System.out.println("  --aacpmVmax=double        AACPM max speed (default 2.0).");
         System.out.println("  --aacpmAlpha=double       AACPM avoidance speed multiplier (default 0.5).");
+        System.out.println("  --seeds=vals              Comma/space separated seeds for batch runs.");
+        System.out.println("  --seedsList=vals          Alias for --seeds.");
+        System.out.println("  --threads=int             Maximum concurrent simulations (default 5).");
     }
 
     private static int parseInt(Map<String, String> opts, String key, int defaultValue) {
@@ -193,5 +331,15 @@ public final class Main {
         }
         String dir = "output/" + modelName + "_n" + agents + "_seed" + seed + "_steps" + steps;
         return Path.of(dir);
+    }
+
+    private static final class RunSpec {
+        final int agents;
+        final long seed;
+
+        RunSpec(int agents, long seed) {
+            this.agents = agents;
+            this.seed = seed;
+        }
     }
 }

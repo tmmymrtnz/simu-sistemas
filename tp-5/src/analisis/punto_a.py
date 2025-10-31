@@ -112,7 +112,10 @@ def main() -> None:
     if rows:
         _plot_phi_vs_q(rows)
         _plot_phi_q_aggregated(per_agent_rates)
-        _plot_contacts_comparison(counts_to_contacts)
+        phi_means = {
+            count: mean(phi for phi, _ in samples) for count, samples in per_agent_rates.items() if samples
+        }
+        _plot_contacts_comparison(counts_to_contacts, phi_means)
 
 
 def _std(values, mean_value) -> float:
@@ -144,7 +147,10 @@ def _plot_contacts_curve(output_dir: Path, contacts, count: int, seed: int) -> P
     return out_path
 
 
-def _plot_contacts_comparison(counts_to_contacts: dict[int, list[tuple[int, list, Path]]]) -> None:
+def _plot_contacts_comparison(
+    counts_to_contacts: dict[int, list[tuple[int, list, Path]]],
+    phi_means: dict[int, float],
+) -> None:
     if not counts_to_contacts:
         return
 
@@ -154,9 +160,12 @@ def _plot_contacts_comparison(counts_to_contacts: dict[int, list[tuple[int, list
     fig, ax = plt.subplots()
     color_cycle = plt.rcParams["axes.prop_cycle"].by_key().get("color", [])
     color_map: dict[int, str] = {}
-    labeled: set[int] = set()
+    has_mean_curve = False
+    selected_counts = {10, 30, 60, 110, 150}
 
     for count, entries in sorted(counts_to_contacts.items()):
+        if count not in selected_counts:
+            continue
         # collect per-seed time/ordinal arrays for averaging
         per_seed_times = []
         per_seed_ordinals = []
@@ -170,11 +179,6 @@ def _plot_contacts_comparison(counts_to_contacts: dict[int, list[tuple[int, list
             per_seed_ordinals.append(np.array(ordinals))
             if count not in color_map:
                 color_map[count] = color_cycle[len(color_map) % len(color_cycle)] if color_cycle else None
-            color = color_map[count]
-            # plot individual seed curves faintly (no legend entry)
-            ax.plot(times, ordinals, linewidth=1.0, color=color, alpha=0.45, linestyle='-', label=None, zorder=1)
-            # register that we've seen this N for legend purposes later
-            labeled.add(count)
 
         # compute and plot mean temporal evolution across seeds for this N
         if per_seed_times:
@@ -191,20 +195,28 @@ def _plot_contacts_comparison(counts_to_contacts: dict[int, list[tuple[int, list
                 interp_matrix.append(interp)
             if interp_matrix:
                 stacked = np.vstack(interp_matrix)
-        mean_curve = stacked.mean(axis=0)
-        std_curve = stacked.std(axis=0, ddof=1) if stacked.shape[0] > 1 else np.zeros_like(mean_curve)
-        # plot mean (prominent) and shaded std (subtle)
-        color = color_map.get(count, None)
-        mean_label = f"N={count} (n={stacked.shape[0]})"
-        ax.plot(time_grid, mean_curve, linewidth=3.0, color=color, linestyle='-',
-            label=mean_label, zorder=3)
-        ax.fill_between(time_grid, mean_curve - std_curve, mean_curve + std_curve,
-                color=color, alpha=0.18, zorder=2)
+                mean_curve = stacked.mean(axis=0)
+                color = color_map.get(count, None)
+                phi_value = phi_means.get(count, float("nan"))
+                if phi_value == phi_value:
+                    mean_label = f"phi={phi_value:.4f}"
+                else:
+                    mean_label = f"N={count}"
+                ax.plot(
+                    time_grid,
+                    mean_curve,
+                    linewidth=3.0,
+                    color=color,
+                    linestyle="-",
+                    label=mean_label,
+                    zorder=3,
+                )
+                has_mean_curve = True
 
     ax.set_xlabel("t [s]")
     ax.set_ylabel("unique contacts")
     ax.grid(True, linestyle="--", linewidth=0.5, alpha=0.6)
-    if labeled:
+    if has_mean_curve:
         ax.legend()
     fig.tight_layout()
     fig.savefig(plot_dir / "contacts_vs_time.png", dpi=200)
@@ -263,11 +275,6 @@ def _plot_phi_q_aggregated(per_agent_rates: dict[int, list[tuple[float, float]]]
     fig, ax = plt.subplots()
     # errorbar with xerr and yerr
     ax.errorbar(phi_means, q_means, xerr=phi_stds, yerr=q_stds, fmt='o', capsize=4)
-    # annotate N labels next to points
-    for i, count in enumerate(counts):
-        if i < len(phi_means):
-            ax.annotate(str(count), (phi_means[i], q_means[i]), textcoords='offset points', xytext=(6, 4))
-
     ax.set_xlabel("phi")
     ax.set_ylabel("Q [1/s]")
     ax.grid(True, linestyle="--", linewidth=0.5, alpha=0.6)

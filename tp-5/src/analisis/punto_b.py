@@ -235,10 +235,6 @@ def _plot_alpha_phi_aggregated(per_agent_stats: dict[int, list[tuple[float, int,
 
     fig, ax = plt.subplots()
     ax.errorbar(phi_means, alpha_means, xerr=phi_stds, yerr=alpha_stds, fmt='o', capsize=4)
-    for i, count in enumerate(counts):
-        if i < len(phi_means):
-            ax.annotate(str(count), (phi_means[i], alpha_means[i]), textcoords='offset points', xytext=(6, 4))
-
     ax.set_xlabel("phi")
     ax.set_ylabel("alpha")
     ax.grid(True, linestyle="--", linewidth=0.5, alpha=0.6)
