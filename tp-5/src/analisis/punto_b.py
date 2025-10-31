@@ -129,6 +129,7 @@ def main() -> None:
         print(f"\nSaved detailed rows to {args.store}")
 
     _plot_alpha_vs_phi(alpha_points)
+    _plot_alpha_phi_aggregated(per_agent_stats)
 
 
 def _is_nan(value: float) -> bool:
@@ -185,6 +186,64 @@ def _plot_alpha_vs_phi(alpha_points) -> None:
     ax.grid(True, linestyle="--", linewidth=0.5, alpha=0.6)
     fig.tight_layout()
     fig.savefig(plot_dir / "alpha_vs_phi.png", dpi=200)
+    plt.close(fig)
+
+
+def _std(values, mean_value) -> float:
+    if len(values) < 2:
+        return 0.0
+    variance = sum((v - mean_value) ** 2 for v in values) / (len(values) - 1)
+    return variance ** 0.5
+
+
+def _plot_alpha_phi_aggregated(per_agent_stats: dict[int, list[tuple[float, int, float, float]]]) -> None:
+    """Plot aggregated means per N with error bars in x (phi) and y (alpha).
+
+    per_agent_stats maps N -> list of tuples (phi, count_samples, alpha, sigma)
+    """
+    if not per_agent_stats:
+        return
+
+    plot_dir = PROJECT_ROOT / "plots"
+    plot_dir.mkdir(parents=True, exist_ok=True)
+
+    counts = sorted(per_agent_stats.keys())
+    phi_means = []
+    phi_stds = []
+    alpha_means = []
+    alpha_stds = []
+
+    for count in counts:
+        samples = per_agent_stats[count]
+        if not samples:
+            continue
+        phis = [phi for phi, _, _, _ in samples]
+        alphas = [alpha for _, _, alpha, _ in samples if not _is_nan(alpha)]
+        phi_mean = mean(phis)
+        phi_std = _std(phis, phi_mean)
+        if alphas:
+            alpha_mean = mean(alphas)
+            alpha_std = _std(alphas, alpha_mean)
+        else:
+            alpha_mean = float("nan")
+            alpha_std = 0.0
+
+        phi_means.append(phi_mean)
+        phi_stds.append(phi_std)
+        alpha_means.append(alpha_mean)
+        alpha_stds.append(alpha_std)
+
+    fig, ax = plt.subplots()
+    ax.errorbar(phi_means, alpha_means, xerr=phi_stds, yerr=alpha_stds, fmt='o', capsize=4)
+    for i, count in enumerate(counts):
+        if i < len(phi_means):
+            ax.annotate(str(count), (phi_means[i], alpha_means[i]), textcoords='offset points', xytext=(6, 4))
+
+    ax.set_xlabel("phi")
+    ax.set_ylabel("alpha")
+    ax.grid(True, linestyle="--", linewidth=0.5, alpha=0.6)
+    fig.tight_layout()
+    fig.savefig(plot_dir / "alpha_phi_aggregated.png", dpi=200)
     plt.close(fig)
 
 

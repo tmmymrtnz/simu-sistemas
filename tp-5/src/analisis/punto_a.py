@@ -28,6 +28,7 @@ import matplotlib
 
 matplotlib.use("Agg", force=True)
 import matplotlib.pyplot as plt
+import numpy as np
 
 
 def main() -> None:
@@ -110,6 +111,7 @@ def main() -> None:
 
     if rows:
         _plot_phi_vs_q(rows)
+        _plot_phi_q_aggregated(per_agent_rates)
         _plot_contacts_comparison(counts_to_contacts)
 
 
@@ -155,18 +157,49 @@ def _plot_contacts_comparison(counts_to_contacts: dict[int, list[tuple[int, list
     labeled: set[int] = set()
 
     for count, entries in sorted(counts_to_contacts.items()):
+        # collect per-seed time/ordinal arrays for averaging
+        per_seed_times = []
+        per_seed_ordinals = []
         for seed, contacts, _ in entries:
             if not contacts:
                 continue
             ordered = sorted(contacts, key=lambda c: c.time)
             times = [c.time for c in ordered]
             ordinals = list(range(1, len(ordered) + 1))
+            per_seed_times.append(np.array(times))
+            per_seed_ordinals.append(np.array(ordinals))
             if count not in color_map:
                 color_map[count] = color_cycle[len(color_map) % len(color_cycle)] if color_cycle else None
             color = color_map[count]
-            label = f"N={count}" if count not in labeled else None
-            ax.plot(times, ordinals, linewidth=1.2, color=color, label=label)
+            # plot individual seed curves faintly (no legend entry)
+            ax.plot(times, ordinals, linewidth=1.0, color=color, alpha=0.45, linestyle='-', label=None, zorder=1)
+            # register that we've seen this N for legend purposes later
             labeled.add(count)
+
+        # compute and plot mean temporal evolution across seeds for this N
+        if per_seed_times:
+            # choose a common grid from 0 to max final time among seeds
+            max_time = max(t[-1] for t in per_seed_times)
+            time_grid = np.linspace(0.0, max_time, 300)
+            interp_matrix = []
+            for t_arr, o_arr in zip(per_seed_times, per_seed_ordinals):
+                # ensure arrays are increasing in time; np.interp requires increasing x
+                if len(t_arr) == 0:
+                    continue
+                # use left=0 (no contacts before first), right=last ordinal
+                interp = np.interp(time_grid, t_arr, o_arr, left=0.0, right=float(o_arr[-1]))
+                interp_matrix.append(interp)
+            if interp_matrix:
+                stacked = np.vstack(interp_matrix)
+        mean_curve = stacked.mean(axis=0)
+        std_curve = stacked.std(axis=0, ddof=1) if stacked.shape[0] > 1 else np.zeros_like(mean_curve)
+        # plot mean (prominent) and shaded std (subtle)
+        color = color_map.get(count, None)
+        mean_label = f"N={count} (n={stacked.shape[0]})"
+        ax.plot(time_grid, mean_curve, linewidth=3.0, color=color, linestyle='-',
+            label=mean_label, zorder=3)
+        ax.fill_between(time_grid, mean_curve - std_curve, mean_curve + std_curve,
+                color=color, alpha=0.18, zorder=2)
 
     ax.set_xlabel("t [s]")
     ax.set_ylabel("unique contacts")
@@ -192,6 +225,54 @@ def _plot_phi_vs_q(rows) -> None:
     ax.grid(True, linestyle="--", linewidth=0.5, alpha=0.6)
     fig.tight_layout()
     fig.savefig(plot_dir / "phi_vs_Q.png", dpi=200)
+    plt.close(fig)
+
+
+def _plot_phi_q_aggregated(per_agent_rates: dict[int, list[tuple[float, float]]]) -> None:
+    """Plot the aggregated means per N with error bars in both x (phi) and y (Q).
+
+    per_agent_rates: mapping N -> list of (phi, Q) samples (one per seed/run)
+    """
+    if not per_agent_rates:
+        return
+
+    plot_dir = PROJECT_ROOT / "plots"
+    plot_dir.mkdir(parents=True, exist_ok=True)
+
+    counts = sorted(per_agent_rates.keys())
+    phi_means = []
+    phi_stds = []
+    q_means = []
+    q_stds = []
+
+    for count in counts:
+        samples = per_agent_rates[count]
+        if not samples:
+            continue
+        phis = [p for p, _ in samples]
+        qs = [q for _, q in samples]
+        phi_mean = mean(phis)
+        phi_std = _std(phis, phi_mean)
+        q_mean = mean(qs)
+        q_std = _std(qs, q_mean)
+        phi_means.append(phi_mean)
+        phi_stds.append(phi_std)
+        q_means.append(q_mean)
+        q_stds.append(q_std)
+
+    fig, ax = plt.subplots()
+    # errorbar with xerr and yerr
+    ax.errorbar(phi_means, q_means, xerr=phi_stds, yerr=q_stds, fmt='o', capsize=4)
+    # annotate N labels next to points
+    for i, count in enumerate(counts):
+        if i < len(phi_means):
+            ax.annotate(str(count), (phi_means[i], q_means[i]), textcoords='offset points', xytext=(6, 4))
+
+    ax.set_xlabel("phi")
+    ax.set_ylabel("Q [1/s]")
+    ax.grid(True, linestyle="--", linewidth=0.5, alpha=0.6)
+    fig.tight_layout()
+    fig.savefig(plot_dir / "phi_Q_aggregated.png", dpi=200)
     plt.close(fig)
 
 
