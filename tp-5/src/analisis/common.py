@@ -236,8 +236,20 @@ def load_states(path: Path) -> List[StateRecord]:
             continue
         if not parts[0].lstrip("-").isdigit():
             continue
-        if len(parts) != 10:
-            raise ValueError(f"Unexpected states row format: {raw}")
+        # Accept flexible state row lengths. Expected formats:
+        # - Full format (10 columns): step time agent_id x y vx vy ax ay radius
+        # - Short format (6 columns): step time agent_id x y radius
+        # If a row has between 6 and 10 tokens, pad missing numeric fields with 0.0.
+        if len(parts) < 6:
+            raise ValueError(f"Unexpected states row format (too few columns): {raw}")
+        if len(parts) > 10:
+            # If there are extra tokens, keep the first 10 and ignore the rest.
+            parts = parts[:10]
+        if 6 <= len(parts) < 10:
+            # pad missing numeric fields with zeros to reach 10 columns
+            parts = parts + ["0.0"] * (10 - len(parts))
+
+        # Now parts has exactly 10 tokens
         records.append(
             StateRecord(
                 step=int(parts[0]),

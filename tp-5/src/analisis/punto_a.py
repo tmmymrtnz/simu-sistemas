@@ -138,7 +138,7 @@ def _plot_contacts_curve(output_dir: Path, contacts, count: int, seed: int) -> P
     fig, ax = plt.subplots()
     ax.plot(times, ordinals, marker="o", linestyle="-", linewidth=1.2, markersize=3)
     ax.set_xlabel(r"$t$ [s]")
-    ax.set_ylabel(r"$N_{\text{contactos}}$")
+    ax.set_ylabel(r"$N_{\mathrm{contactos}}$")
     ax.grid(True, linestyle="--", linewidth=0.5, alpha=0.6)
     fig.tight_layout()
     out_path = plot_dir / f"contacts_curve_N{count}_seed{seed}.png"
@@ -214,7 +214,7 @@ def _plot_contacts_comparison(
                 has_mean_curve = True
 
     ax.set_xlabel(r"$t$ [s]")
-    ax.set_ylabel(r"$N_{\text{contactos}}$")
+    ax.set_ylabel(r"$N_{\mathrm{contactos}}$")
     ax.grid(True, linestyle="--", linewidth=0.5, alpha=0.6)
     if has_mean_curve:
         ax.legend()
