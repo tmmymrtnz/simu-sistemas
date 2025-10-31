@@ -137,8 +137,8 @@ def _plot_contacts_curve(output_dir: Path, contacts, count: int, seed: int) -> P
 
     fig, ax = plt.subplots()
     ax.plot(times, ordinals, marker="o", linestyle="-", linewidth=1.2, markersize=3)
-    ax.set_xlabel("t [s]")
-    ax.set_ylabel("unique contacts")
+    ax.set_xlabel(r"$t$ [s]")
+    ax.set_ylabel(r"$N_{\text{contactos}}$")
     ax.grid(True, linestyle="--", linewidth=0.5, alpha=0.6)
     fig.tight_layout()
     out_path = plot_dir / f"contacts_curve_N{count}_seed{seed}.png"
@@ -199,7 +199,7 @@ def _plot_contacts_comparison(
                 color = color_map.get(count, None)
                 phi_value = phi_means.get(count, float("nan"))
                 if phi_value == phi_value:
-                    mean_label = f"phi={phi_value:.4f}"
+                    mean_label = fr"$\phi = {phi_value:.4f}$"
                 else:
                     mean_label = f"N={count}"
                 ax.plot(
@@ -213,8 +213,8 @@ def _plot_contacts_comparison(
                 )
                 has_mean_curve = True
 
-    ax.set_xlabel("t [s]")
-    ax.set_ylabel("unique contacts")
+    ax.set_xlabel(r"$t$ [s]")
+    ax.set_ylabel(r"$N_{\text{contactos}}$")
     ax.grid(True, linestyle="--", linewidth=0.5, alpha=0.6)
     if has_mean_curve:
         ax.legend()
@@ -232,8 +232,8 @@ def _plot_phi_vs_q(rows) -> None:
 
     fig, ax = plt.subplots()
     ax.scatter(phis, rates, marker="o")
-    ax.set_xlabel("phi")
-    ax.set_ylabel("Q [1/s]")
+    ax.set_xlabel(r"$\phi$")
+    ax.set_ylabel(r"$Q$ [1/s]")
     ax.grid(True, linestyle="--", linewidth=0.5, alpha=0.6)
     fig.tight_layout()
     fig.savefig(plot_dir / "phi_vs_Q.png", dpi=200)
@@ -275,8 +275,8 @@ def _plot_phi_q_aggregated(per_agent_rates: dict[int, list[tuple[float, float]]]
     fig, ax = plt.subplots()
     # errorbar with xerr and yerr
     ax.errorbar(phi_means, q_means, xerr=phi_stds, yerr=q_stds, fmt='o', capsize=4)
-    ax.set_xlabel("phi")
-    ax.set_ylabel("Q [1/s]")
+    ax.set_xlabel(r"$\phi$")
+    ax.set_ylabel(r"$Q$ [1/s]")
     ax.grid(True, linestyle="--", linewidth=0.5, alpha=0.6)
     fig.tight_layout()
     fig.savefig(plot_dir / "phi_Q_aggregated.png", dpi=200)

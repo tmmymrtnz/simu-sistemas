@@ -161,8 +161,8 @@ def _plot_inter_contact_distribution(output_dir: Path, count: int, seed: int, de
                 theoretical *= ref_y / ((ref_x / xmin) ** (1 - fit.alpha))
             ax.loglog(x, theoretical, linestyle="--", color="red")
 
-    ax.set_xlabel("tau [s]")
-    ax.set_ylabel("P(T > tau)")
+    ax.set_xlabel(r"$\tau$ [s]")
+    ax.set_ylabel(r"$P(T > \tau)$")
     ax.grid(True, which="both", linestyle="--", linewidth=0.5, alpha=0.6)
     fig.tight_layout()
     fig.savefig(plot_dir / f"inter_contact_ccdf_N{count}_seed{seed}.png", dpi=200)
@@ -181,8 +181,8 @@ def _plot_alpha_vs_phi(alpha_points) -> None:
 
     fig, ax = plt.subplots()
     ax.errorbar(phis, alphas, yerr=sigmas, fmt="o", capsize=3)
-    ax.set_xlabel("phi")
-    ax.set_ylabel("alpha")
+    ax.set_xlabel(r"$\phi$")
+    ax.set_ylabel(r"$\alpha$")
     ax.grid(True, linestyle="--", linewidth=0.5, alpha=0.6)
     fig.tight_layout()
     fig.savefig(plot_dir / "alpha_vs_phi.png", dpi=200)
@@ -235,8 +235,8 @@ def _plot_alpha_phi_aggregated(per_agent_stats: dict[int, list[tuple[float, int,
 
     fig, ax = plt.subplots()
     ax.errorbar(phi_means, alpha_means, xerr=phi_stds, yerr=alpha_stds, fmt='o', capsize=4)
-    ax.set_xlabel("phi")
-    ax.set_ylabel("alpha")
+    ax.set_xlabel(r"$\phi$")
+    ax.set_ylabel(r"$\alpha$")
     ax.grid(True, linestyle="--", linewidth=0.5, alpha=0.6)
     fig.tight_layout()
     fig.savefig(plot_dir / "alpha_phi_aggregated.png", dpi=200)
