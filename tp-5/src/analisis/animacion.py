@@ -79,18 +79,17 @@ def build_animation(frames, domain, save_path: Path, frame_dt: float, dpi: int) 
     ax.set_xlim(0, domain)
     ax.set_ylim(0, domain)
     ax.set_aspect("equal")
-    ax.set_title("Pedestrian simulation")
     ax.set_xlabel("x [m]")
     ax.set_ylabel("y [m]")
 
     central_radius = 0.21
-    central = Circle((domain / 2.0, domain / 2.0), central_radius, facecolor="gray", alpha=0.5, edgecolor="black")
+    central = Circle((domain / 2.0, domain / 2.0), central_radius, facecolor="red", alpha=1.0, edgecolor="red")
     ax.add_patch(central)
 
     first_agents = sorted(frames[0][2], key=lambda rec: rec.agent_id)
     circles: dict[int, Circle] = {}
     for rec in first_agents:
-        circle = Circle((rec.x, rec.y), rec.radius, facecolor="tab:blue", alpha=0.7, edgecolor="black", linewidth=0.5)
+        circle = Circle((rec.x, rec.y), rec.radius, facecolor="white", alpha=1.0, edgecolor="black", linewidth=0.8)
         ax.add_patch(circle)
         circles[rec.agent_id] = circle
 
@@ -104,8 +103,8 @@ def build_animation(frames, domain, save_path: Path, frame_dt: float, dpi: int) 
         angles="xy",
         scale_units="xy",
         scale=1.0,
-        width=0.006,
-        color="tab:orange",
+        width=0.003, 
+        color="red", 
     )
 
     time_text = ax.text(0.02, 0.95, "", transform=ax.transAxes)
@@ -123,7 +122,7 @@ def build_animation(frames, domain, save_path: Path, frame_dt: float, dpi: int) 
         for rec in ordered:
             circle = circles.get(rec.agent_id)
             if circle is None:
-                circle = Circle((rec.x, rec.y), rec.radius, facecolor="tab:blue", alpha=0.7, edgecolor="black", linewidth=0.5)
+                circle = Circle((rec.x, rec.y), rec.radius, facecolor="white", alpha=1.0, edgecolor="black", linewidth=0.8)
                 ax.add_patch(circle)
                 circles[rec.agent_id] = circle
             circle.center = (rec.x, rec.y)
