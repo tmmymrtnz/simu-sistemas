@@ -20,17 +20,6 @@ SFM_B := 0.08
 SFM_K := 120000.0
 SFM_KAPPA := 240000.0
 SFM_TAU := 0.5
-AACPM_KC := 2.0
-AACPM_BETA := 2.0
-AACPM_K := 120000.0
-AACPM_KAPPA := 240000.0
-AACPM_KAVO := 1.5
-AACPM_TAU := 1.0
-AACPM_DELTA := 0.05
-AACPM_OMEGA := 2.0
-AACPM_VDES := 1.0
-AACPM_VMAX := 2.0
-AACPM_ALPHA := 0.5
 
 AGENTS_LIST := 10 20 30 40 50 60 70 80 90 100 110 120 130 140 150
 SEEDS_LIST := 1 2 3 4 5
@@ -82,7 +71,7 @@ JAVA_ARGS := \
 JAVA_SOURCES := $(shell find $(JAVA_SRCDIR) -name '*.java')
 
 XMIN ?=
-STRIDE ?= 1
+STRIDE ?= 10
 ANIMATION_OUTPUT ?=
 RESULTS_A ?=
 RESULTS_B ?=
@@ -124,18 +113,6 @@ ANALYSIS_COMMON_ARGS := \
 	--sfm-k $(SFM_K) \
 	--sfm-kappa $(SFM_KAPPA) \
 	--sfm-tau $(SFM_TAU) \
-	--aacpm-kc $(AACPM_KC) \
-	--aacpm-beta $(AACPM_BETA) \
-	--aacpm-k $(AACPM_K) \
-	--aacpm-kappa $(AACPM_KAPPA) \
-	--aacpm-kavo $(AACPM_KAVO) \
-	--aacpm-tau $(AACPM_TAU) \
-	--aacpm-delta $(AACPM_DELTA) \
-	--aacpm-omega $(AACPM_OMEGA) \
-	--aacpm-vdes $(AACPM_VDES) \
-	--aacpm-vmax $(AACPM_VMAX) \
-	--aacpm-alpha $(AACPM_ALPHA) \
-	--output-base $(OUTPUT_DIR)
 
 ifeq ($(strip $(DURATION)),)
 ANALYSIS_COMMON_ARGS += --steps $(STEPS)
