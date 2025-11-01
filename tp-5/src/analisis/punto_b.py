@@ -73,10 +73,10 @@ def main() -> None:
     if powerlaw is None:
         print("Warning: powerlaw package not available. Exponent fits will be skipped.")
 
-    per_agent_stats = defaultdict(list)
-    counts_to_deltas = defaultdict(list)
-    # we'll store pooled results later if requested
-    lines = ["N,phi_mean,total_samples,alpha_pooled,sigma_pooled,xmin_pooled"]
+    per_agent_phis = defaultdict(list)
+    per_agent_deltas = defaultdict(list)
+    run_rows = []
+    lines = ["N,seed,phi,count,alpha,sigma,output"]
 
     for count in agent_values:
         for seed in seeds:
@@ -87,27 +87,53 @@ def main() -> None:
             phi = area_fraction(states, params.domain)
             deltas = inter_contact_times(contacts)
 
-            # store deltas per N for pooled CCDF plotting
-            counts_to_deltas[count].append(list(deltas))
-
-            # keep per-agent stats shape compatible (alpha,sigma as NaN)
-            per_agent_stats[count].append((phi, len(deltas), float("nan"), float("nan")))
-            # do not perform per-seed fits or per-seed plots — we'll work on pooled data only
+            per_agent_phis[count].append(phi)
+            per_agent_deltas[count].extend(deltas)
+            run_rows.append((count, seed, phi, len(deltas), output_dir))
+            print(
+                f"N={count:4d} seed={seed:6d} phi={phi:.4f} samples={len(deltas):5d} "
+                f"output={output_dir}"
+            )
+            _plot_inter_contact_distribution(output_dir, count, seed, deltas, None)
 
     print("\nAveraged exponent per N:")
+    aggregated_results: dict[int, dict[str, float]] = {}
+    alpha_points = []
     for count in agent_values:
-        samples = per_agent_stats[count]
-        if not samples:
+        phis = per_agent_phis[count]
+        if not phis:
             continue
-        phis = [phi for phi, _, _, _ in samples]
-        alpha_values = [alpha for _, _, alpha, _ in samples if not _is_nan(alpha)]
-        sigma_values = [sigma for _, _, _, sigma in samples if not _is_nan(sigma)]
         phi_mean = mean(phis)
-        alpha_mean = mean(alpha_values) if alpha_values else float("nan")
-        sigma_mean = mean(sigma_values) if sigma_values else float("nan")
+        phi_std = _std(phis, phi_mean)
+        deltas_all = per_agent_deltas[count]
+        alpha = float("nan")
+        sigma = float("nan")
+        if powerlaw is not None and len(deltas_all) >= 2:
+            fit = powerlaw.Fit(deltas_all, xmin=args.xmin, discrete=False, verbose=False)
+            alpha = float(fit.alpha)
+            sigma = float(fit.sigma)
+        aggregated_results[count] = {
+            "phi_mean": phi_mean,
+            "phi_std": phi_std,
+            "alpha": alpha,
+            "sigma": sigma,
+            "run_count": len(phis),
+            "delta_count": len(deltas_all),
+        }
+        if not _is_nan(alpha):
+            alpha_points.append((phi_mean, alpha, sigma))
         print(
-            f"N={count:4d} phi_mean={phi_mean:.4f} alpha_mean={alpha_mean:.6f} "
-            f"sigma_mean={sigma_mean:.6f} samples={len(samples)}"
+            f"N={count:4d} phi_mean={phi_mean:.4f} phi_std={phi_std:.4f} "
+            f"alpha={alpha:.6f} sigma={sigma:.6f} samples={len(phis)} "
+            f"total_deltas={len(deltas_all)}"
+        )
+
+    for count, seed, phi, delta_count, output_dir in run_rows:
+        aggregated = aggregated_results.get(count, {})
+        alpha_val = aggregated.get("alpha", float("nan"))
+        sigma_val = aggregated.get("sigma", float("nan"))
+        lines.append(
+            f"{count},{seed},{phi:.6f},{delta_count},{alpha_val:.6f},{sigma_val:.6f},{output_dir}"
         )
 
     if args.store:
@@ -115,48 +141,8 @@ def main() -> None:
         args.store.write_text("\n".join(lines) + "\n", encoding="utf-8")
         print(f"\nSaved detailed rows to {args.store}")
 
-    # First compute pooled fits and plots for CCDF; get pooled alpha per N
-    pooled_fits = _plot_ccdf_aggregated(counts_to_deltas)
-
-    # Print and optionally store pooled fit parameters per N
-    pooled_lines = ["N,phi_mean,total_samples,alpha_pooled,sigma_pooled,xmin_pooled"]
-    for count in sorted(per_agent_stats.keys()):
-        phis = [phi for phi, _, _, _ in per_agent_stats[count]]
-        if not phis:
-            continue
-        phi_mean = mean(phis)
-        pooled_alpha = float("nan")
-        pooled_sigma = float("nan")
-        pooled_xmin = float("nan")
-        total_samples = 0
-        if count in counts_to_deltas:
-            pooled = np.hstack([np.asarray(d) for d in counts_to_deltas[count] if len(d) > 0])
-            total_samples = pooled.size
-        if count in pooled_fits:
-            pooled_alpha, pooled_sigma, pooled_xmin = pooled_fits[count]
-        print(f"N={count:4d} phi_mean={phi_mean:.4f} pooled_samples={total_samples:6d} alpha={pooled_alpha:.6f} sigma={pooled_sigma:.6f} xmin={pooled_xmin}")
-        pooled_lines.append(f"{count},{phi_mean:.6f},{total_samples},{pooled_alpha:.6f},{pooled_sigma:.6f},{pooled_xmin}")
-
-    if args.store:
-        args.store.parent.mkdir(parents=True, exist_ok=True)
-        args.store.write_text("\n".join(pooled_lines) + "\n", encoding="utf-8")
-        print(f"\nSaved pooled fit rows to {args.store}")
-
-    # Use pooled fits for alpha-vs-phi plots
-    pooled_alpha_points = []
-    for count in sorted(per_agent_stats.keys()):
-        if count not in pooled_fits:
-            continue
-        phis = [phi for phi, _, _, _ in per_agent_stats[count]]
-        if not phis:
-            continue
-        phi_mean = mean(phis)
-        alpha_p, sigma_p, xmin_p = pooled_fits[count]
-        pooled_alpha_points.append((phi_mean, alpha_p, sigma_p))
-
-    _plot_alpha_vs_phi(pooled_alpha_points)
-    _plot_alpha_phi_aggregated(per_agent_stats, pooled_fits)
-    return
+    _plot_alpha_vs_phi(alpha_points)
+    _plot_alpha_phi_aggregated(per_agent_phis, aggregated_results)
 
 
 def _is_nan(value: float) -> bool:
@@ -257,47 +243,40 @@ def _std(values, mean_value) -> float:
     return variance ** 0.5
 
 
-def _plot_alpha_phi_aggregated(per_agent_stats: dict[int, list[tuple[float, int, float, float]]], pooled_fits: dict[int, tuple[float, float, float]] | None = None) -> None:
-    """Plot aggregated means per N with error bars in x (phi) and y (alpha).
-
-    per_agent_stats maps N -> list of tuples (phi, count_samples, alpha, sigma)
-    """
-    if not per_agent_stats:
+def _plot_alpha_phi_aggregated(
+    per_agent_phis: dict[int, list[float]],
+    aggregated_results: dict[int, dict[str, float]],
+) -> None:
+    """Plot aggregated means per N with error bars in x (phi) and y (alpha)."""
+    if not per_agent_phis:
         return
 
     plot_dir = PROJECT_ROOT / "plots"
     plot_dir.mkdir(parents=True, exist_ok=True)
 
-    counts = sorted(per_agent_stats.keys())
+    counts = sorted(per_agent_phis.keys())
     phi_means = []
     phi_stds = []
     alpha_means = []
     alpha_stds = []
 
     for count in counts:
-        samples = per_agent_stats[count]
-        if not samples:
+        phis = per_agent_phis[count]
+        if not phis:
             continue
-        phis = [phi for phi, _, _, _ in samples]
         phi_mean = mean(phis)
         phi_std = _std(phis, phi_mean)
-
-        # If pooled fit info provided, use it for the aggregated alpha
-        if pooled_fits and count in pooled_fits:
-            alpha_mean, alpha_std, _ = pooled_fits[count]
-        else:
-            alphas = [alpha for _, _, alpha, _ in samples if not _is_nan(alpha)]
-            if alphas:
-                alpha_mean = mean(alphas)
-                alpha_std = _std(alphas, alpha_mean)
-            else:
-                alpha_mean = float("nan")
-                alpha_std = 0.0
-
+        aggregated = aggregated_results.get(count, {})
+        alpha_mean = aggregated.get("alpha", float("nan"))
+        sigma = aggregated.get("sigma", 0.0)
+        alpha_std = 0.0 if _is_nan(sigma) else sigma
         phi_means.append(phi_mean)
         phi_stds.append(phi_std)
         alpha_means.append(alpha_mean)
         alpha_stds.append(alpha_std)
+
+    if not phi_means:
+        return
 
     fig, ax = plt.subplots()
     ax.errorbar(phi_means, alpha_means, xerr=phi_stds, yerr=alpha_stds, fmt='o', capsize=4)
