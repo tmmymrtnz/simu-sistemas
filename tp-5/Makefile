@@ -151,5 +151,13 @@ animate:
 		$(ANALYSIS_COMMON_ARGS) \
 		--stride $(STRIDE) $(ANIMATION_SAVE_ARG)
 
+qmax_vs_v:
+	$(PY) src/analisis/qmax_vs_v.py \
+		$(ANALYSIS_COMMON_ARGS) \
+		--v-list 1 2 3 4 5 6 7 8 9 10 \
+		--seeds 1 2 3 4 5 \
+		--agents-list 10 20 30 40 50 60 70 80 90 100 \
+		--store $(OUTPUT_DIR)/qmax_vs_v.csv
+
 clean:
 	rm -rf $(BUILD_DIR)
