@@ -11,6 +11,7 @@ from common import (
     add_simulation_arguments,
     area_fraction,
     ensure_simulation,
+    ensure_simulations_parallel,
     inter_contact_times,
     load_contacts,
     load_states,
@@ -77,6 +78,8 @@ def main() -> None:
     per_agent_deltas = defaultdict(list)
     run_rows = []
     lines = ["N,seed,phi,count,alpha,sigma,output"]
+
+    ensure_simulations_parallel(base_params, agent_values, seeds)
 
     for count in agent_values:
         for seed in seeds:

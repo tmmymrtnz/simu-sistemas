@@ -122,6 +122,45 @@ class SimulationParams:
             vars_.append(f"DURATION={self.duration}")
         return vars_
 
+    def to_java_cli_dict(self) -> dict[str, str]:
+        """Return CLI key/value pairs for invoking the Java simulation."""
+        args = {
+            "model": self.model,
+            "agents": str(self.agents),
+            "domain": str(self.domain),
+            "rc": str(self.rc),
+            "dt": str(self.dt),
+            "outputInterval": str(self.output_interval),
+            "seed": str(self.seed),
+            "minRadius": str(self.min_radius),
+            "maxRadius": str(self.max_radius),
+            "desiredSpeed": str(self.desired_speed),
+            "relaxation": str(self.relaxation),
+            "sfmA": str(self.sfm_a),
+            "sfmB": str(self.sfm_b),
+            "sfmK": str(self.sfm_k),
+            "sfmKappa": str(self.sfm_kappa),
+            "sfmTau": str(self.sfm_tau),
+            "aacpmKc": str(self.aacpm_kc),
+            "aacpmBeta": str(self.aacpm_beta),
+            "aacpmK": str(self.aacpm_k),
+            "aacpmKappa": str(self.aacpm_kappa),
+            "aacpmKavo": str(self.aacpm_kavo),
+            "aacpmTau": str(self.aacpm_tau),
+            "aacpmDelta": str(self.aacpm_delta),
+            "aacpmOmega": str(self.aacpm_omega),
+            "aacpmVdes": str(self.aacpm_vdes),
+            "aacpmVmax": str(self.aacpm_vmax),
+            "aacpmAlpha": str(self.aacpm_alpha),
+        }
+        if self.steps is not None:
+            args["steps"] = str(self.steps)
+        elif self.duration is not None:
+            args["duration"] = str(self.duration)
+        if self.output_override is not None:
+            args["output"] = str(self.output_dir())
+        return args
+
 
 def add_simulation_arguments(parser) -> None:
     parser.add_argument("--model", default="sfm", help="Dynamics model to use (sfm or aacpm).")
@@ -332,6 +371,50 @@ def ensure_simulation(params: SimulationParams) -> Path:
     if not (states_path.exists() and contacts_path.exists()):
         raise RuntimeError(f"Simulation failed to produce expected files in {output_dir}")
     return output_dir
+
+
+def ensure_simulations_parallel(
+    base_params: SimulationParams, agent_counts: Sequence[int], seeds: Sequence[int]
+) -> None:
+    if not agent_counts or not seeds:
+        return
+
+    pending: dict[int, List[int]] = {}
+    for count in agent_counts:
+        missing: List[int] = []
+        for seed in seeds:
+            params = base_params.with_agents(count).with_seed(seed)
+            output_dir = params.output_dir()
+            states_path = output_dir / "states.txt"
+            contacts_path = output_dir / "contacts.txt"
+            if not (states_path.exists() and contacts_path.exists()):
+                missing.append(seed)
+        if missing:
+            pending[count] = missing
+
+    if not pending:
+        return
+
+    build_dir = PROJECT_ROOT / "build"
+    if not build_dir.exists():
+        subprocess.run(["make", "-C", str(PROJECT_ROOT), "build"], check=True)
+
+    for count, seed_list in pending.items():
+        params = base_params.with_agents(count)
+        cli_args = params.to_java_cli_dict()
+        # remove single-run specific keys
+        cli_args.pop("seed", None)
+        cli_args.pop("agents", None)
+        if "output" in cli_args:
+            # cannot run batch when explicit output override is requested
+            continue
+        cli_args["agentsList"] = str(count)
+        cli_args["seeds"] = ",".join(str(seed) for seed in seed_list)
+        cli_args["threads"] = str(min(5, len(seed_list)))
+
+        command = ["java", "-cp", str(build_dir), "tp5.simulacion.Main"]
+        command.extend(f"--{key}={value}" for key, value in cli_args.items())
+        subprocess.run(command, check=True, cwd=PROJECT_ROOT)
 
 
 def run_simulation(params: SimulationParams, output_dir: Path) -> None:

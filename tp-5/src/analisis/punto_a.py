@@ -12,6 +12,7 @@ from common import (
     area_fraction,
     compute_scanning_rate,
     ensure_simulation,
+    ensure_simulations_parallel,
     load_contacts,
     load_states,
     params_from_args,
@@ -67,6 +68,8 @@ def main() -> None:
     rows = []
 
     counts_to_contacts = {}
+
+    ensure_simulations_parallel(base_params, agent_values, seeds)
 
     for count in agent_values:
         for seed in seeds:
