@@ -61,10 +61,18 @@ def main() -> None:
     if not frames:
         raise SystemExit("No frames available in states.txt")
 
-    build_animation(frames, params.domain, save_path, params.output_interval * args.stride, args.dpi)
+    # Load contact events so the animation can mark which agents contacted the central
+    contacts = []
+    contacts_path = output_dir / "contacts.txt"
+    if contacts_path.exists():
+        from common import load_contacts
+
+        contacts = load_contacts(contacts_path)
+
+    build_animation(frames, params.domain, save_path, params.output_interval * args.stride, args.dpi, contacts)
 
 
-def build_animation(frames, domain, save_path: Path, frame_dt: float, dpi: int) -> None:
+def build_animation(frames, domain, save_path: Path, frame_dt: float, dpi: int, contacts=None) -> None:
     try:
         import matplotlib
         matplotlib.use("Agg", force=True)
@@ -109,6 +117,14 @@ def build_animation(frames, domain, save_path: Path, frame_dt: float, dpi: int) 
 
     time_text = ax.text(0.02, 0.95, "", transform=ax.transAxes)
 
+    # Build a sorted list of contact events and an index to advance as time progresses
+    contacts = sorted(contacts or [], key=lambda c: c.time)
+    contact_idx = 0
+    contacted_agents: set[int] = set()
+
+    # Track previous positions to detect wrapping (jump in position > domain/2)
+    prev_pos: dict[int, tuple[float, float]] = {rec.agent_id: (rec.x, rec.y) for rec in first_agents}
+
     def init():
         time_text.set_text("")
         return []
@@ -118,6 +134,11 @@ def build_animation(frames, domain, save_path: Path, frame_dt: float, dpi: int) 
         ordered = sorted(agents, key=lambda rec: rec.agent_id)
         coords = np.array([[rec.x, rec.y] for rec in ordered])
         vels = np.array([[rec.vx, rec.vy] for rec in ordered])
+        nonlocal contact_idx
+        # advance contact events up to current time
+        while contact_idx < len(contacts) and contacts[contact_idx].time <= time:
+            contacted_agents.add(contacts[contact_idx].agent_id)
+            contact_idx += 1
 
         for rec in ordered:
             circle = circles.get(rec.agent_id)
@@ -125,8 +146,24 @@ def build_animation(frames, domain, save_path: Path, frame_dt: float, dpi: int) 
                 circle = Circle((rec.x, rec.y), rec.radius, facecolor="white", alpha=1.0, edgecolor="black", linewidth=0.8)
                 ax.add_patch(circle)
                 circles[rec.agent_id] = circle
+            # detect wrapping by comparing with previous position
+            prev = prev_pos.get(rec.agent_id)
+            if prev is not None:
+                dx = abs(rec.x - prev[0])
+                dy = abs(rec.y - prev[1])
+                if dx > (domain * 0.5) or dy > (domain * 0.5):
+                    # assume agent wrapped across periodic boundary: reset contacted flag
+                    if rec.agent_id in contacted_agents:
+                        contacted_agents.remove(rec.agent_id)
+            prev_pos[rec.agent_id] = (rec.x, rec.y)
+
             circle.center = (rec.x, rec.y)
             circle.radius = rec.radius
+            # color according to whether agent has contacted (orange) or not (white)
+            if rec.agent_id in contacted_agents:
+                circle.set_facecolor("orange")
+            else:
+                circle.set_facecolor("white")
 
         quiver.set_offsets(coords)
         quiver.set_UVC(vels[:, 0], vels[:, 1])
