@@ -179,7 +179,7 @@ def _plot_contacts_comparison(
     color_cycle = plt.rcParams["axes.prop_cycle"].by_key().get("color", [])
     color_map: dict[int, str] = {}
     has_mean_curve = False
-    selected_counts = {10, 40, 80, 110, 150}
+    selected_counts = {10, 70, 160, 240, 300}
 
     for count, entries in sorted(counts_to_contacts.items()):
         if count not in selected_counts:

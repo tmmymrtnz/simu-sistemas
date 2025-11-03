@@ -88,6 +88,7 @@ def main() -> None:
 
     per_agent_phis = defaultdict(list)
     per_agent_deltas = defaultdict(list)
+    counts_to_deltas: dict[int, list[list[float]]] = defaultdict(list)
     run_rows = []
     lines = ["N,seed,phi,count,alpha,sigma,output"]
 
@@ -104,6 +105,7 @@ def main() -> None:
 
             per_agent_phis[count].append(phi)
             per_agent_deltas[count].extend(deltas)
+            counts_to_deltas[count].append(list(deltas))
             run_rows.append((count, seed, phi, len(deltas), output_dir))
             print(
                 f"N={count:4d} seed={seed:6d} phi={phi:.4f} samples={len(deltas):5d} "
@@ -158,6 +160,7 @@ def main() -> None:
 
     _plot_alpha_vs_phi(alpha_points)
     _plot_alpha_phi_aggregated(per_agent_phis, aggregated_results)
+    _plot_ccdf_aggregated(counts_to_deltas)
 
 
 def _is_nan(value: float) -> bool:
