@@ -1,0 +1,45 @@
+@startuml
+
+' Declaración de clases (todas afuera de los packages)
+class Main {
+    +main(args)
+}
+class SimulationConfig
+class SimulationState {
+    +getMobileAgents()
+}
+class PedestrianDynamicsModel {
+    +updateState()
+}
+class SFM2000Model
+class SimulationEngine {
+    +run()
+}
+class CIMNeighbourProvider {
+    +getNeighbours()
+}
+class CellIndexMethod {
+    +findNeighbours()
+}
+class SimulationOutputWriter {
+    +writeState()
+}
+class SimulationFactory {
+    +randomPlacement()
+    +computeAreaFraction()
+}
+
+' Relaciones principales
+PedestrianDynamicsModel <|-- SFM2000Model
+Main --> SimulationConfig
+Main --> SimulationState
+Main --> PedestrianDynamicsModel
+Main --> SimulationEngine
+Main --> SimulationOutputWriter
+SimulationEngine --> CIMNeighbourProvider
+CIMNeighbourProvider --> CellIndexMethod
+SimulationEngine --> SimulationState
+SimulationOutputWriter --> SimulationState
+SimulationFactory --> SimulationState
+
+@enduml
