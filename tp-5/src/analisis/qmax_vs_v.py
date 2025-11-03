@@ -10,6 +10,7 @@ from common import (
     PROJECT_ROOT,
     add_simulation_arguments,
     ensure_simulation,
+    ensure_simulations_parallel,
     load_contacts,
     load_states,
     params_from_args,
@@ -86,21 +87,26 @@ def main() -> None:
     group_size = args.group_size
     print(f"Running Qmax vs v analysis: v_values={v_values} seeds={seeds} group_size={group_size}")
 
-    results = []  # list of tuples (v, qmax, phi_mean_all, phi_of_qmax, seed_of_qmax, samples)
+    results = []  # list of tuples (v, qmax, best_N, phi_of_qmax, sample_count)
 
     for v in v_values:
+        v_tag = format_float(v)
+        base_for_v = replace(
+            base_params,
+            desired_speed=v,
+            output_base=base_params.output_base / f"v_{v_tag}",
+        )
+        ensure_simulations_parallel(base_for_v, agents_list, seeds)
+
         per_N_stats: list[tuple[int, float, float]] = []  # list of (N, q_mean, phi_mean)
         for N in agents_list:
             qs = []
             phis = []
             for seed in seeds:
-                params = replace(base_params, desired_speed=v, seed=seed)
-                params = replace(params, agents=N)
-                # unique output per (N,v,seed)
-                base_out = params.default_output_dir()
-                v_tag = format_float(v)
-                unique_out = base_out.with_name(base_out.name + f"_v{v_tag}")
-                params = replace(params, output_override=unique_out)
+                params = (
+                    base_for_v.with_agents(N)
+                    .with_seed(seed)
+                )
                 output_dir = ensure_simulation(params)
                 states = load_states(output_dir / "states.txt")
                 contacts = load_contacts(output_dir / "contacts.txt")

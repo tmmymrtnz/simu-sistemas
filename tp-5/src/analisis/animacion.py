@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import os
+from dataclasses import replace
 from pathlib import Path
 
 from common import (
@@ -11,6 +12,7 @@ from common import (
     group_states_by_step,
     load_states,
     params_from_args,
+    format_float,
 )
 
 MPL_CACHE_DIR = PROJECT_ROOT / "tmp_mpl_cache"
@@ -47,6 +49,20 @@ def main() -> None:
         raise SystemExit("stride must be >= 1")
 
     params = params_from_args(args)
+    output_dir = params.output_dir()
+    states_path = output_dir / "states.txt"
+    if not states_path.exists():
+        speed_tag = format_float(params.desired_speed)
+        alt_base = params.output_base / Path(f"v_{speed_tag}")
+        alt_params = replace(params, output_base=alt_base)
+        alt_dir = alt_params.output_dir()
+        if (alt_dir / "states.txt").exists():
+            params = alt_params
+            output_dir = alt_dir
+        else:
+            # fallback to default behavior; ensure_simulation will trigger run
+            output_dir = params.output_dir()
+
     output_dir = ensure_simulation(params)
     save_path = args.save
     if save_path is None:

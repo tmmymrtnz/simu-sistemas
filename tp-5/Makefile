@@ -75,6 +75,7 @@ STRIDE ?= 10
 ANIMATION_OUTPUT ?=
 RESULTS_A ?=
 RESULTS_B ?=
+SPEED_OUTPUT ?=
 
 A_STORE_ARG :=
 ifneq ($(strip $(RESULTS_A)),)
@@ -94,6 +95,11 @@ endif
 ANIMATION_SAVE_ARG :=
 ifneq ($(strip $(ANIMATION_OUTPUT)),)
 ANIMATION_SAVE_ARG := --save $(ANIMATION_OUTPUT)
+endif
+
+SPEED_OUTPUT_ARG :=
+ifneq ($(strip $(SPEED_OUTPUT)),)
+SPEED_OUTPUT_ARG := --speed-output $(SPEED_OUTPUT)
 endif
 
 ANALYSIS_COMMON_ARGS := \
@@ -138,13 +144,13 @@ analysis_a:
 	$(PY) src/analisis/punto_a.py \
 		$(ANALYSIS_COMMON_ARGS) \
 		--agents-list $(AGENTS_LIST) \
-		--seeds $(SEEDS_LIST) $(A_STORE_ARG)
+		--seeds $(SEEDS_LIST) $(SPEED_OUTPUT_ARG) $(A_STORE_ARG)
 
 analysis_b:
 	$(PY) src/analisis/punto_b.py \
 		$(ANALYSIS_COMMON_ARGS) \
 		--agents-list $(AGENTS_LIST) \
-		--seeds $(SEEDS_LIST) $(XMIN_ARG) $(B_STORE_ARG)
+		--seeds $(SEEDS_LIST) $(SPEED_OUTPUT_ARG) $(XMIN_ARG) $(B_STORE_ARG)
 
 animate:
 	$(PY) src/analisis/animacion.py \

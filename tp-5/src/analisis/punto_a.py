@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 from collections import defaultdict
+from dataclasses import replace
 from pathlib import Path
 from statistics import mean
 import os
@@ -16,6 +17,7 @@ from common import (
     load_contacts,
     load_states,
     params_from_args,
+    format_float,
 )
 
 MPL_CACHE_DIR = PROJECT_ROOT / "tmp_mpl_cache"
@@ -52,9 +54,19 @@ def main() -> None:
         type=Path,
         help="Optional CSV path to store the aggregated results.",
     )
+    parser.add_argument(
+        "--speed-output",
+        type=float,
+        help="When provided, analysis looks under output/v_<speed> for simulations.",
+    )
 
     args = parser.parse_args()
     base_params = params_from_args(args)
+    if args.speed_output is not None:
+        speed_tag = format_float(args.speed_output)
+        speed_base = base_params.output_base / Path(f"v_{speed_tag}")
+        base_params = replace(base_params, output_base=speed_base)
+
     agent_values = args.agents_list or [base_params.agents]
     if args.seeds:
         seeds = args.seeds
@@ -68,6 +80,7 @@ def main() -> None:
     rows = []
 
     counts_to_contacts = {}
+    run_summary: dict[tuple[int, int], tuple[float, float]] = {}
 
     ensure_simulations_parallel(base_params, agent_values, seeds)
 
@@ -81,6 +94,7 @@ def main() -> None:
             rate = compute_scanning_rate(contacts)
             per_agent_rates[count].append((phi, rate))
             rows.append((count, seed, phi, rate, output_dir))
+            run_summary[(count, seed)] = (phi, rate)
             print(
                 f"N={count:4d} seed={seed:6d} phi={phi:.4f} Q={rate:.6f} output={output_dir}"
             )
@@ -119,6 +133,7 @@ def main() -> None:
             count: mean(phi for phi, _ in samples) for count, samples in per_agent_rates.items() if samples
         }
         _plot_contacts_comparison(counts_to_contacts, phi_means)
+        _plot_q_error_curves(60, counts_to_contacts, run_summary)
 
 
 def _std(values, mean_value) -> float:
@@ -164,7 +179,7 @@ def _plot_contacts_comparison(
     color_cycle = plt.rcParams["axes.prop_cycle"].by_key().get("color", [])
     color_map: dict[int, str] = {}
     has_mean_curve = False
-    selected_counts = {10, 30, 60, 110, 150}
+    selected_counts = {10, 40, 80, 110, 150}
 
     for count, entries in sorted(counts_to_contacts.items()):
         if count not in selected_counts:
@@ -224,6 +239,80 @@ def _plot_contacts_comparison(
     fig.tight_layout()
     fig.savefig(plot_dir / "contacts_vs_time.png", dpi=200)
     plt.close(fig)
+
+
+def _plot_q_error_curves(
+    target_count: int,
+    counts_to_contacts: dict[int, list[tuple[int, list, Path]]],
+    run_summary: dict[tuple[int, int], tuple[float, float]],
+) -> None:
+    entries = counts_to_contacts.get(target_count)
+    if not entries:
+        return
+
+    plot_dir = PROJECT_ROOT / "plots"
+    plot_dir.mkdir(parents=True, exist_ok=True)
+
+    fig, ax = plt.subplots()
+    has_curve = False
+
+    for seed, contacts, _ in entries:
+        if not contacts:
+            continue
+        ordered = sorted(contacts, key=lambda c: c.time)
+        if len(ordered) < 3:
+            continue
+        times = np.array([c.time for c in ordered], dtype=float)
+        ordinals = np.array([c.ordinal for c in ordered], dtype=float)
+
+        slope = compute_scanning_rate(ordered)
+        if slope != slope:
+            continue
+
+        slope = float(slope)
+        span = max(abs(slope) * 0.4, 1e-3)
+        q_min = max(slope - 3 * span, 1e-6)
+        q_max = slope + 3 * span
+        q_values = np.linspace(q_min, q_max, 300)
+
+        mse_values = _mse_curve(times, ordinals, q_values)
+        mse_opt = _mse_curve(times, ordinals, np.array([slope]))[0]
+
+        phi_value, stored_slope = run_summary.get((target_count, seed), (float("nan"), slope))
+        label = f"seed={seed}"
+        if phi_value == phi_value:
+            label += f" | $\\phi={phi_value:.4f}$"
+        label += f" | $Q={stored_slope:.4f}$"
+
+        ax.plot(q_values, mse_values, label=label)
+        ax.scatter([slope], [mse_opt], marker="o", s=30)
+        has_curve = True
+
+    if not has_curve:
+        plt.close(fig)
+        return
+
+    ax.set_xlabel(r"$Q$")
+    ax.set_ylabel(r"$\mathrm{ECM}(Q)$")
+    ax.set_title(f"Hipérbolas de ECM para N={target_count}")
+    ax.grid(True, linestyle="--", linewidth=0.5, alpha=0.6)
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(plot_dir / f"q_mse_hyperbolas_N{target_count}.png", dpi=200)
+    plt.close(fig)
+
+
+def _mse_curve(times: np.ndarray, ordinals: np.ndarray, slopes: np.ndarray) -> np.ndarray:
+    if times.size == 0:
+        return np.zeros_like(slopes)
+    x_mean = times.mean()
+    y_mean = ordinals.mean()
+    mse = []
+    for slope in slopes:
+        intercept = y_mean - slope * x_mean
+        residuals = ordinals - (slope * times + intercept)
+        mse.append(np.mean(residuals**2))
+    return np.asarray(mse, dtype=float)
 
 
 def _plot_phi_vs_q(rows) -> None:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 from collections import defaultdict
+from dataclasses import replace
 from pathlib import Path
 from statistics import mean
 import os
@@ -16,6 +17,7 @@ from common import (
     load_contacts,
     load_states,
     params_from_args,
+    format_float,
 )
 
 MPL_CACHE_DIR = PROJECT_ROOT / "tmp_mpl_cache"
@@ -62,9 +64,19 @@ def main() -> None:
         type=Path,
         help="Optional CSV path to store exponent estimates.",
     )
+    parser.add_argument(
+        "--speed-output",
+        type=float,
+        help="When provided, analysis looks under output/v_<speed> for simulations.",
+    )
 
     args = parser.parse_args()
     base_params = params_from_args(args)
+    if args.speed_output is not None:
+        speed_tag = format_float(args.speed_output)
+        speed_base = base_params.output_base / Path(f"v_{speed_tag}")
+        base_params = replace(base_params, output_base=speed_base)
+
     agent_values = args.agents_list or [base_params.agents]
     if args.seeds:
         seeds = args.seeds

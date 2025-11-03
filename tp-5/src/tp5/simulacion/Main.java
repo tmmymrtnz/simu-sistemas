@@ -16,6 +16,7 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
@@ -79,40 +80,61 @@ public final class Main {
             throw new IllegalArgumentException("--output cannot be combined with multiple runs; remove it or provide unique paths.");
         }
 
-        int threadCount = resolveThreadCount(options, runs.size());
-        System.out.println("Launching " + runs.size() + " simulations using " + threadCount + " threads.");
+        Map<Integer, List<RunSpec>> grouped = new LinkedHashMap<>();
+        for (RunSpec spec : runs) {
+            grouped.computeIfAbsent(spec.agents, ignored -> new ArrayList<>()).add(spec);
+        }
 
-        ExecutorService executor = Executors.newFixedThreadPool(threadCount);
-        List<Future<?>> futures = new ArrayList<>();
-        try {
-            for (RunSpec spec : runs) {
-                futures.add(executor.submit(() -> {
-                    runSimulation(options, spec.agents, spec.seed);
-                    return null;
-                }));
+        for (Map.Entry<Integer, List<RunSpec>> entry : grouped.entrySet()) {
+            int agents = entry.getKey();
+            List<RunSpec> group = entry.getValue();
+            if (group.isEmpty()) {
+                continue;
             }
-            for (Future<?> future : futures) {
-                future.get();
+            if (group.size() == 1) {
+                RunSpec spec = group.get(0);
+                System.out.println("Running simulation for N=" + agents + " seed=" + spec.seed);
+                runSimulation(options, spec.agents, spec.seed);
+                continue;
             }
-        } catch (ExecutionException e) {
-            executor.shutdownNow();
-            Throwable cause = e.getCause();
-            if (cause instanceof IOException ioException) {
-                throw ioException;
+
+            int threadCount = resolveThreadCount(options, group.size());
+            System.out.println(
+                    "Launching " + group.size() + " simulations for N=" + agents + " using " + threadCount + " threads."
+            );
+
+            ExecutorService executor = Executors.newFixedThreadPool(threadCount);
+            List<Future<?>> futures = new ArrayList<>();
+            try {
+                for (RunSpec spec : group) {
+                    futures.add(executor.submit(() -> {
+                        runSimulation(options, spec.agents, spec.seed);
+                        return null;
+                    }));
+                }
+                for (Future<?> future : futures) {
+                    future.get();
+                }
+            } catch (ExecutionException e) {
+                executor.shutdownNow();
+                Throwable cause = e.getCause();
+                if (cause instanceof IOException ioException) {
+                    throw ioException;
+                }
+                if (cause instanceof RuntimeException runtimeException) {
+                    throw runtimeException;
+                }
+                if (cause instanceof Error error) {
+                    throw error;
+                }
+                throw new RuntimeException("Simulation task failed", cause);
+            } catch (InterruptedException e) {
+                executor.shutdownNow();
+                Thread.currentThread().interrupt();
+                throw e;
+            } finally {
+                executor.shutdown();
             }
-            if (cause instanceof RuntimeException runtimeException) {
-                throw runtimeException;
-            }
-            if (cause instanceof Error error) {
-                throw error;
-            }
-            throw new RuntimeException("Simulation task failed", cause);
-        } catch (InterruptedException e) {
-            executor.shutdownNow();
-            Thread.currentThread().interrupt();
-            throw e;
-        } finally {
-            executor.shutdown();
         }
     }
 
@@ -329,8 +351,13 @@ public final class Main {
         if (opts.containsKey("output")) {
             return Path.of(opts.get("output"));
         }
-        String dir = "output/" + modelName + "_n" + agents + "_seed" + seed + "_steps" + steps;
-        return Path.of(dir);
+        String base = opts.getOrDefault("output-base", "output");
+        Path basePath = Path.of(base);
+        if (!basePath.isAbsolute()) {
+            basePath = Path.of("").toAbsolutePath().resolve(basePath).normalize();
+        }
+        String dir = modelName + "_n" + agents + "_seed" + seed + "_steps" + steps;
+        return basePath.resolve(dir);
     }
 
     private static final class RunSpec {

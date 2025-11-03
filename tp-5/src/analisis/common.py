@@ -157,6 +157,7 @@ class SimulationParams:
             args["steps"] = str(self.steps)
         elif self.duration is not None:
             args["duration"] = str(self.duration)
+        args["output-base"] = str(self.resolved_output_base())
         if self.output_override is not None:
             args["output"] = str(self.output_dir())
         return args
